@@ -31,7 +31,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      - run: cargo hack clippy --workspace --feature-powerset -- -D warnings
+      - run: cargo hack clippy --workspace --feature-powerset --ignore-unknown-features -- -D warnings
 
   test:
     name: Test
@@ -43,4 +43,4 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack,cargo-nextest
-      - run: cargo hack nextest run --workspace --feature-powerset
+      - run: cargo hack nextest run --workspace --feature-powerset --ignore-unknown-features
