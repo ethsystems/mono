@@ -7,6 +7,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # depth-2: pairwise powerset (~n^2/2) instead of 2^n
+  HACK_POWERSET_FLAGS: --feature-powerset --depth 2
 
 jobs:
   fmt:
@@ -31,11 +33,15 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      - run: cargo hack clippy --workspace --feature-powerset --ignore-unknown-features -- -D warnings
+      - run: cargo hack clippy --workspace ${{ env.HACK_POWERSET_FLAGS }} -- -D warnings
 
   test:
-    name: Test
+    name: Test (${{ matrix.partition }}/2)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.95.0
@@ -43,4 +49,4 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack,cargo-nextest
-      - run: cargo hack nextest run --workspace --feature-powerset --ignore-unknown-features
+      - run: cargo hack nextest run --workspace ${{ env.HACK_POWERSET_FLAGS }} --partition ${{ matrix.partition }}/2 --no-tests=pass
