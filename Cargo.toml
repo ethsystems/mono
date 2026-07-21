@@ -8,3 +8,11 @@ edition = "2024"
 rust-version = "1.95.0"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ethsystems/mono"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+[profile.profiling]
+inherits = "release"
+debug = true

@@ -4,6 +4,10 @@
 
 Rust 1.95.0 (pinned via [`rust-toolchain.toml`](rust-toolchain.toml)).
 
+## Crates
+
+- [`rotortree`](crates/rotortree): n-ary leanIMT implementation with persistence, for high-throughput append-only merkle trees.
+
 ## Security
 
 See [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy.

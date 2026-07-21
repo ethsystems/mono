@@ -1,0 +1,84 @@
+[package]
+name = "rotortree"
+version = "0.17.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "rotortree: a fast n-ary leanIMT implementation with persistence"
+
+[features]
+default = ["blake3"]
+blake3 = ["dep:blake3"]
+wincode = ["dep:wincode"]
+std = ["blake3?/std", "wincode?/std", "crc-fast?/std", "serde?/std"]
+concurrent = ["std", "dep:parking_lot"]
+parallel = ["std", "dep:rayon"]
+storage = ["std", "dep:parking_lot", "dep:arc-swap", "wincode", "dep:crc-fast", "dep:fs4", "dep:memmap2"]
+test-helpers = []
+docs = ["dep:include-utils"]
+serde = ["dep:serde", "dep:serde_with"]
+
+[dependencies]
+# Pinned exactly: the SIMD batch parent-hashing path (src/adapters/blake3.rs)
+# drives the #[doc(hidden)] blake3::platform::Platform::hash_many API with
+# hardcoded IV + flag constants, and relies on its single-chunk output being
+# byte-identical to blake3::hash. That contract is not part of blake3's stable
+# surface, so a minor bump could silently change it. The byte-identity unit
+# test guards behavior; this pin guards the API.
+blake3 = { version = "=1.8.5", default-features = false, optional = true }
+wincode = { version = "0.4", default-features = false, features = ["alloc", "derive"], optional = true }
+parking_lot = { version = "0.12", optional = true }
+arc-swap = { version = "1", optional = true }
+rayon = { version = "1", optional = true }
+crc-fast = { version = "1.10", default-features = false, optional = true }
+fs4 = { version = "0.13", optional = true, features = ["sync"] }
+memmap2 = { version = "0.9", optional = true }
+include-utils = { version = "0.2.4", optional = true }
+serde = { version = "1", default-features = false, optional = true, features = ["derive"] }
+serde_with = { version = "3.17", default-features = false, optional = true }
+
+[dev-dependencies]
+proptest = "1"
+criterion = { version = "0.8", features = ["html_reports"] }
+crabtime = "1.1.4"
+tempfile = "3"
+tikv-jemallocator = "0.6"
+rotortree = { path = ".", features = ["test-helpers"] }
+
+[[bench]]
+name = "tree_bench"
+harness = false
+
+[[bench]]
+name = "tree_bench_concurrent"
+harness = false
+required-features = ["concurrent"]
+
+[[bench]]
+name = "tree_bench_parallel"
+harness = false
+required-features = ["parallel"]
+
+[[bench]]
+name = "tree_bench_all"
+harness = false
+required-features = ["concurrent", "parallel"]
+
+[[bench]]
+name = "tree_bench_storage"
+harness = false
+required-features = ["storage"]
+
+[[example]]
+name = "bulk_load"
+required-features = ["storage", "parallel", "blake3"]
+
+[[example]]
+name = "light_client"
+required-features = ["storage", "blake3"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
