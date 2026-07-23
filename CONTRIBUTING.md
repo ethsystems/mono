@@ -489,7 +489,7 @@ let value = cache.load(&key)?;
 let guard = shared.lock().expect("Cache mutex poisoned: state is corrupt");
 ```
 
-Beware shared accessors that can panic under concurrency: `Arc::try_unwrap` panics if other clones exist, so never expose it on an API several callers might hit at once.
+Beware shared accessors that can behave poorly under concurrency: `Arc::try_unwrap` returns `Err(Arc<T>)` if other clones exist (and `.unwrap()`/`.expect()` on that result will panic), so avoid exposing it on APIs several callers might hit at once.
 
 #### Prefer `expect()` with a reason over `unwrap()` or `?`
 
