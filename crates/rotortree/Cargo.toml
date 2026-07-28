@@ -33,7 +33,7 @@ parking_lot = { version = "0.12", optional = true }
 arc-swap = { version = "1", optional = true }
 rayon = { version = "1", optional = true }
 crc-fast = { version = "1.10", default-features = false, optional = true }
-fs4 = { version = "0.13", optional = true, features = ["sync"] }
+fs4 = { version = "1.1", optional = true, features = ["sync"] }
 memmap2 = { version = "0.9", optional = true }
 include-utils = { version = "0.2.4", optional = true }
 serde = { version = "1", default-features = false, optional = true, features = ["derive"] }
