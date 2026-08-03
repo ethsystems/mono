@@ -37,11 +37,10 @@ use crate::{
 /// Fixed-size chunk used for batched trial decryption.
 pub const SCAN_CHUNK: usize = 64;
 
-/// Chunks the parallel scan holds in flight per round. Bounds how much of
-/// the input a parallel scan buffers, keeping it a streaming scan rather
-/// than one that materializes its input.
+/// Chunks each thread gets per parallel round. Bounds how much of the input
+/// a parallel scan buffers, keeping it a streaming scan.
 #[cfg(feature = "parallel")]
-const CHUNKS_IN_FLIGHT: usize = 16;
+const CHUNKS_PER_THREAD: usize = 8;
 
 /// Envelopes one parallel task claims, as `(index, outcome)` pairs.
 #[cfg(feature = "parallel")]
@@ -180,30 +179,34 @@ impl<K: Kem, D: Domain> Scanner<K, D> {
     {
         use rayon::prelude::*;
 
-        const WINDOW: usize = SCAN_CHUNK * CHUNKS_IN_FLIGHT;
-
         let sk = self.recipient.secret_key();
         let pk_r = self.recipient.pk_encoded();
         let info_cap = self.buffers.info.capacity();
 
+        // Sized against the pool this scan actually runs on, so the window
+        // holds several chunks per thread whatever the machine is.
+        let threads = rayon::current_num_threads().max(1);
+        let tasks_per_round = threads * CHUNKS_PER_THREAD;
+        let window_len = SCAN_CHUNK * tasks_per_round;
+
         let mut results = Vec::new();
         let mut iter = envelopes.into_iter().enumerate();
-        let mut window: [Option<(usize, &'a SealedNote<K, B>)>; WINDOW] = [None; WINDOW];
+        let mut window: Vec<Option<(usize, &'a SealedNote<K, B>)>> =
+            Vec::with_capacity(window_len);
         let mut per_chunk: Vec<ChunkHits<D>> = Vec::new();
 
         loop {
-            let mut len = 0usize;
-            for slot in &mut window {
-                let Some(item) = iter.next() else { break };
-                *slot = Some(item);
-                len += 1;
-            }
+            window.clear();
+            window.extend(iter.by_ref().take(window_len).map(Some));
+            let len = window.len();
             if len == 0 {
                 break;
             }
 
-            window[..len]
-                .par_chunks(SCAN_CHUNK)
+            let task_len = len.div_ceil(tasks_per_round).clamp(1, SCAN_CHUNK);
+
+            window
+                .par_chunks(task_len)
                 .map(|chunk| {
                     // A task's scratch grows to fit the ciphertexts it
                     // actually meets, unlike the scanner's own pre-reserved
@@ -219,7 +222,7 @@ impl<K: Kem, D: Domain> Scanner<K, D> {
                 results.extend(found);
             }
 
-            if len < WINDOW {
+            if len < window_len {
                 break;
             }
         }
@@ -336,7 +339,9 @@ fn process_envelope<K: Kem, D: Domain, B: AsRef<[u8]>>(
             Ok(_) => Err(Malformed(OpenError::Verify)),
         },
     };
-    scratch.zeroize();
+
+    scratch.as_mut_slice().zeroize();
+    scratch.clear();
     Some(outcome)
 }
 
@@ -404,7 +409,8 @@ mod tests {
         let mut rng = ChaCha20Rng::seed_from_u64(31);
 
         let me = Recipient::<MockKem>::new(recipient);
-        let count = SCAN_CHUNK * CHUNKS_IN_FLIGHT * 2 + SCAN_CHUNK + 7;
+        let window = SCAN_CHUNK * CHUNKS_PER_THREAD * rayon::current_num_threads().max(1);
+        let count = window * 2 + SCAN_CHUNK + 7;
         let envelopes: Vec<_> = (0..count)
             .map(|i| {
                 let to = if i % 5 == 0 { &recipient } else { &stranger };
