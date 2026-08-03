@@ -70,6 +70,10 @@ impl Kem for X25519 {
         Some(X25519SharedSecret(shared_bytes))
     }
 
+    fn derive_pk(sk: &Self::SecretKey) -> Self::PublicKey {
+        PublicKey::from(sk)
+    }
+
     fn encode_pk(pk: &Self::PublicKey) -> Self::Epk {
         pk.to_bytes()
     }

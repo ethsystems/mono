@@ -21,7 +21,7 @@ mod common;
 use common::{
     AAD,
     GenKeypair,
-    recipient_keypair,
+    bench_recipient,
 };
 
 /// Note sizes in bytes. The largest sits just under the 65536-byte
@@ -34,11 +34,11 @@ const SEAL_SEED: u64 = 1_337;
 fn bench_seal_adapter<K>(c: &mut Criterion, adapter: &str)
 where
     K: Kem + GenKeypair,
-    K::SharedSecret: AsRef<[u8]>,
 {
     let mut group = c.benchmark_group(format!("oring::seal/adapter={adapter}"));
 
-    let (pk, _) = recipient_keypair::<K>();
+    let me = bench_recipient::<K>();
+    let pk = me.public_key();
 
     // ChaCha20 holds its seed for the whole run and its stream outlasts any
     // benchmark, so one instance hoisted here leaves each timed iteration
@@ -53,7 +53,7 @@ where
         // A seal that fails returns before the AEAD, reporting a fast time
         // for work it never did.
         assert!(
-            seal::<K, TestDomain>(&pk, &note, AAD, &mut rng).is_ok(),
+            seal::<K, TestDomain>(pk, &note, AAD, &mut rng).is_ok(),
             "seal of a {len}-byte note must succeed under {adapter}"
         );
 
@@ -61,7 +61,7 @@ where
         group.bench_function(format!("bytes={len}"), |b| {
             b.iter(|| {
                 black_box(seal::<K, TestDomain>(
-                    black_box(&pk),
+                    black_box(pk),
                     black_box(&note),
                     black_box(AAD),
                     &mut rng,

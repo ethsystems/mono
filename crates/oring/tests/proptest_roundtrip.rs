@@ -1,6 +1,7 @@
 #![cfg(feature = "test-helpers")]
 
 use oring::{
+    Recipient,
     SealedNote,
     open,
     seal,
@@ -26,12 +27,11 @@ proptest! {
         let mut rng = ChaCha20Rng::seed_from_u64(seed);
         let mut recipient = [0u8; 32];
         rng.fill_bytes(&mut recipient);
+        let me = Recipient::<MockKem>::new(recipient);
 
         let envelope =
-            seal::<MockKem, TestDomain>(&recipient, &note, &aad, &mut rng).unwrap();
-        let opened =
-            open::<MockKem, TestDomain, _>(&recipient, &recipient, &envelope, &aad)
-                .unwrap();
+            seal::<MockKem, TestDomain>(me.public_key(), &note, &aad, &mut rng).unwrap();
+        let opened = open::<MockKem, TestDomain, _>(&me, &envelope, &aad).unwrap();
         prop_assert_eq!(opened, Some(note));
     }
 
@@ -45,16 +45,16 @@ proptest! {
         let mut rng = ChaCha20Rng::seed_from_u64(seed);
         let mut recipient = [0u8; 32];
         rng.fill_bytes(&mut recipient);
+        let me = Recipient::<MockKem>::new(recipient);
 
         let envelope =
-            seal::<MockKem, TestDomain>(&recipient, &note, &aad, &mut rng).unwrap();
+            seal::<MockKem, TestDomain>(me.public_key(), &note, &aad, &mut rng).unwrap();
         let mut bytes = envelope.as_bytes().to_vec();
         let idx = flip_index % bytes.len();
         bytes[idx] ^= 0x01;
 
         if let Ok(parsed) = SealedNote::<MockKem, Vec<u8>>::parse(bytes) {
-            let result =
-                open::<MockKem, TestDomain, _>(&recipient, &recipient, &parsed, &aad);
+            let result = open::<MockKem, TestDomain, _>(&me, &parsed, &aad);
             prop_assert!(!matches!(result, Ok(Some(_))));
         }
     }
@@ -74,7 +74,11 @@ proptest! {
 
         let envelope =
             seal::<MockKem, TestDomain>(&recipient, &note, &aad, &mut rng).unwrap();
-        let result = open::<MockKem, TestDomain, _>(&stranger, &stranger, &envelope, &aad);
+        let result = open::<MockKem, TestDomain, _>(
+            &Recipient::<MockKem>::new(stranger),
+            &envelope,
+            &aad,
+        );
         prop_assert!(matches!(result, Ok(None)));
     }
 }
@@ -87,6 +91,7 @@ mod k256_roundtrip {
     };
     use oring::{
         K256,
+        Recipient,
         SealedNote,
         open,
         seal,
@@ -104,11 +109,11 @@ mod k256_roundtrip {
             aad in prop::collection::vec(any::<u8>(), 0..64),
         ) {
             let mut rng = ChaCha20Rng::seed_from_u64(seed);
-            let sk = SecretKey::generate_from_rng(&mut rng);
-            let pk = sk.public_key();
+            let me = Recipient::<K256>::new(SecretKey::generate_from_rng(&mut rng));
 
-            let envelope = seal::<K256, TestDomain>(&pk, &note, &aad, &mut rng).unwrap();
-            let opened = open::<K256, TestDomain, _>(&sk, &pk, &envelope, &aad).unwrap();
+            let envelope =
+                seal::<K256, TestDomain>(me.public_key(), &note, &aad, &mut rng).unwrap();
+            let opened = open::<K256, TestDomain, _>(&me, &envelope, &aad).unwrap();
             prop_assert_eq!(opened, Some(note));
         }
 
@@ -120,16 +125,16 @@ mod k256_roundtrip {
             flip_index in any::<usize>(),
         ) {
             let mut rng = ChaCha20Rng::seed_from_u64(seed);
-            let sk = SecretKey::generate_from_rng(&mut rng);
-            let pk = sk.public_key();
+            let me = Recipient::<K256>::new(SecretKey::generate_from_rng(&mut rng));
 
-            let envelope = seal::<K256, TestDomain>(&pk, &note, &aad, &mut rng).unwrap();
+            let envelope =
+                seal::<K256, TestDomain>(me.public_key(), &note, &aad, &mut rng).unwrap();
             let mut bytes = envelope.as_bytes().to_vec();
             let idx = flip_index % bytes.len();
             bytes[idx] ^= 0x01;
 
             if let Ok(parsed) = SealedNote::<K256, Vec<u8>>::parse(bytes) {
-                let result = open::<K256, TestDomain, _>(&sk, &pk, &parsed, &aad);
+                let result = open::<K256, TestDomain, _>(&me, &parsed, &aad);
                 prop_assert!(!matches!(result, Ok(Some(_))));
             }
         }
@@ -141,13 +146,13 @@ mod k256_roundtrip {
             aad in prop::collection::vec(any::<u8>(), 0..64),
         ) {
             let mut rng = ChaCha20Rng::seed_from_u64(seed);
-            let sk_a = SecretKey::generate_from_rng(&mut rng);
-            let pk_a = sk_a.public_key();
-            let sk_b = SecretKey::generate_from_rng(&mut rng);
-            let pk_b = sk_b.public_key();
+            let stranger = Recipient::<K256>::new(SecretKey::generate_from_rng(&mut rng));
+            let me = Recipient::<K256>::new(SecretKey::generate_from_rng(&mut rng));
 
-            let envelope = seal::<K256, TestDomain>(&pk_a, &note, &aad, &mut rng).unwrap();
-            let result = open::<K256, TestDomain, _>(&sk_b, &pk_b, &envelope, &aad);
+            let envelope =
+                seal::<K256, TestDomain>(stranger.public_key(), &note, &aad, &mut rng)
+                    .unwrap();
+            let result = open::<K256, TestDomain, _>(&me, &envelope, &aad);
             prop_assert!(matches!(result, Ok(None)));
         }
     }
@@ -156,6 +161,7 @@ mod k256_roundtrip {
 #[cfg(feature = "x25519")]
 mod x25519_roundtrip {
     use oring::{
+        Recipient,
         SealedNote,
         X25519,
         open,
@@ -165,10 +171,7 @@ mod x25519_roundtrip {
     use proptest::prelude::*;
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
-    use x25519_dalek::{
-        PublicKey,
-        StaticSecret,
-    };
+    use x25519_dalek::StaticSecret;
 
     proptest! {
         #[test]
@@ -178,11 +181,12 @@ mod x25519_roundtrip {
             aad in prop::collection::vec(any::<u8>(), 0..64),
         ) {
             let mut rng = ChaCha20Rng::seed_from_u64(seed);
-            let sk = StaticSecret::random_from_rng(&mut rng);
-            let pk = PublicKey::from(&sk);
+            let me = Recipient::<X25519>::new(StaticSecret::random_from_rng(&mut rng));
 
-            let envelope = seal::<X25519, TestDomain>(&pk, &note, &aad, &mut rng).unwrap();
-            let opened = open::<X25519, TestDomain, _>(&sk, &pk, &envelope, &aad).unwrap();
+            let envelope =
+                seal::<X25519, TestDomain>(me.public_key(), &note, &aad, &mut rng)
+                    .unwrap();
+            let opened = open::<X25519, TestDomain, _>(&me, &envelope, &aad).unwrap();
             prop_assert_eq!(opened, Some(note));
         }
 
@@ -194,16 +198,17 @@ mod x25519_roundtrip {
             flip_index in any::<usize>(),
         ) {
             let mut rng = ChaCha20Rng::seed_from_u64(seed);
-            let sk = StaticSecret::random_from_rng(&mut rng);
-            let pk = PublicKey::from(&sk);
+            let me = Recipient::<X25519>::new(StaticSecret::random_from_rng(&mut rng));
 
-            let envelope = seal::<X25519, TestDomain>(&pk, &note, &aad, &mut rng).unwrap();
+            let envelope =
+                seal::<X25519, TestDomain>(me.public_key(), &note, &aad, &mut rng)
+                    .unwrap();
             let mut bytes = envelope.as_bytes().to_vec();
             let idx = flip_index % bytes.len();
             bytes[idx] ^= 0x01;
 
             if let Ok(parsed) = SealedNote::<X25519, Vec<u8>>::parse(bytes) {
-                let result = open::<X25519, TestDomain, _>(&sk, &pk, &parsed, &aad);
+                let result = open::<X25519, TestDomain, _>(&me, &parsed, &aad);
                 prop_assert!(!matches!(result, Ok(Some(_))));
             }
         }
@@ -215,13 +220,14 @@ mod x25519_roundtrip {
             aad in prop::collection::vec(any::<u8>(), 0..64),
         ) {
             let mut rng = ChaCha20Rng::seed_from_u64(seed);
-            let sk_a = StaticSecret::random_from_rng(&mut rng);
-            let pk_a = PublicKey::from(&sk_a);
-            let sk_b = StaticSecret::random_from_rng(&mut rng);
-            let pk_b = PublicKey::from(&sk_b);
+            let stranger =
+                Recipient::<X25519>::new(StaticSecret::random_from_rng(&mut rng));
+            let me = Recipient::<X25519>::new(StaticSecret::random_from_rng(&mut rng));
 
-            let envelope = seal::<X25519, TestDomain>(&pk_a, &note, &aad, &mut rng).unwrap();
-            let result = open::<X25519, TestDomain, _>(&sk_b, &pk_b, &envelope, &aad);
+            let envelope =
+                seal::<X25519, TestDomain>(stranger.public_key(), &note, &aad, &mut rng)
+                    .unwrap();
+            let result = open::<X25519, TestDomain, _>(&me, &envelope, &aad);
             prop_assert!(matches!(result, Ok(None)));
         }
     }
@@ -229,17 +235,11 @@ mod x25519_roundtrip {
 
 #[cfg(feature = "grumpkin")]
 mod grumpkin_roundtrip {
-    use ark_ec::{
-        AffineRepr,
-        CurveGroup,
-    };
     use ark_ff::PrimeField;
-    use ark_grumpkin::{
-        Affine,
-        Fr,
-    };
+    use ark_grumpkin::Fr;
     use oring::{
         Grumpkin,
+        Recipient,
         SealedNote,
         open,
         seal,
@@ -252,12 +252,12 @@ mod grumpkin_roundtrip {
         SeedableRng,
     };
 
-    fn keypair(rng: &mut impl CryptoRng) -> (Fr, Affine) {
+    /// Draws a scalar the way the adapter draws its ephemeral scalar: bytes
+    /// from the caller's rng, reduced mod the scalar field order.
+    fn secret_key(rng: &mut impl CryptoRng) -> Fr {
         let mut bytes = [0u8; 64];
         rng.fill_bytes(&mut bytes);
-        let sk = Fr::from_le_bytes_mod_order(&bytes);
-        let pk = (Affine::generator() * sk).into_affine();
-        (sk, pk)
+        Fr::from_le_bytes_mod_order(&bytes)
     }
 
     proptest! {
@@ -268,10 +268,12 @@ mod grumpkin_roundtrip {
             aad in prop::collection::vec(any::<u8>(), 0..64),
         ) {
             let mut rng = ChaCha20Rng::seed_from_u64(seed);
-            let (sk, pk) = keypair(&mut rng);
+            let me = Recipient::<Grumpkin>::new(secret_key(&mut rng));
 
-            let envelope = seal::<Grumpkin, TestDomain>(&pk, &note, &aad, &mut rng).unwrap();
-            let opened = open::<Grumpkin, TestDomain, _>(&sk, &pk, &envelope, &aad).unwrap();
+            let envelope =
+                seal::<Grumpkin, TestDomain>(me.public_key(), &note, &aad, &mut rng)
+                    .unwrap();
+            let opened = open::<Grumpkin, TestDomain, _>(&me, &envelope, &aad).unwrap();
             prop_assert_eq!(opened, Some(note));
         }
 
@@ -283,15 +285,17 @@ mod grumpkin_roundtrip {
             flip_index in any::<usize>(),
         ) {
             let mut rng = ChaCha20Rng::seed_from_u64(seed);
-            let (sk, pk) = keypair(&mut rng);
+            let me = Recipient::<Grumpkin>::new(secret_key(&mut rng));
 
-            let envelope = seal::<Grumpkin, TestDomain>(&pk, &note, &aad, &mut rng).unwrap();
+            let envelope =
+                seal::<Grumpkin, TestDomain>(me.public_key(), &note, &aad, &mut rng)
+                    .unwrap();
             let mut bytes = envelope.as_bytes().to_vec();
             let idx = flip_index % bytes.len();
             bytes[idx] ^= 0x01;
 
             if let Ok(parsed) = SealedNote::<Grumpkin, Vec<u8>>::parse(bytes) {
-                let result = open::<Grumpkin, TestDomain, _>(&sk, &pk, &parsed, &aad);
+                let result = open::<Grumpkin, TestDomain, _>(&me, &parsed, &aad);
                 prop_assert!(!matches!(result, Ok(Some(_))));
             }
         }
@@ -303,11 +307,17 @@ mod grumpkin_roundtrip {
             aad in prop::collection::vec(any::<u8>(), 0..64),
         ) {
             let mut rng = ChaCha20Rng::seed_from_u64(seed);
-            let (_sk_a, pk_a) = keypair(&mut rng);
-            let (sk_b, pk_b) = keypair(&mut rng);
+            let stranger = Recipient::<Grumpkin>::new(secret_key(&mut rng));
+            let me = Recipient::<Grumpkin>::new(secret_key(&mut rng));
 
-            let envelope = seal::<Grumpkin, TestDomain>(&pk_a, &note, &aad, &mut rng).unwrap();
-            let result = open::<Grumpkin, TestDomain, _>(&sk_b, &pk_b, &envelope, &aad);
+            let envelope = seal::<Grumpkin, TestDomain>(
+                stranger.public_key(),
+                &note,
+                &aad,
+                &mut rng,
+            )
+            .unwrap();
+            let result = open::<Grumpkin, TestDomain, _>(&me, &envelope, &aad);
             prop_assert!(matches!(result, Ok(None)));
         }
     }

@@ -14,10 +14,12 @@ use ark_serialize::CanonicalSerialize;
 use oring::{
     Grumpkin,
     Kem,
+    Recipient,
     open,
     seal,
     test_util::{
         TestDomain,
+        conformance_derive_pk_agrees,
         conformance_garbage_fails,
         conformance_low_order_fails,
         conformance_roundtrip,
@@ -68,6 +70,7 @@ fn encap_decap_roundtrip_agrees() {
     let mut rng = ChaCha20Rng::seed_from_u64(3);
     let (sk, pk) = keypair(&mut rng);
     conformance_roundtrip::<Grumpkin>(&mut rng, &pk, &sk);
+    conformance_derive_pk_agrees::<Grumpkin>(&pk, &sk);
 }
 
 #[test]
@@ -95,12 +98,14 @@ fn zero_secret_key_decaps_to_none() {
 #[test]
 fn seal_open_round_trips_with_test_domain() {
     let mut rng = ChaCha20Rng::seed_from_u64(4);
-    let (sk, pk) = keypair(&mut rng);
+    let (sk, _pk) = keypair(&mut rng);
+    let me = Recipient::<Grumpkin>::new(sk);
     let note = vec![1u8, 2, 3, 4, 5];
     let aad = b"grumpkin-aad";
 
-    let envelope = seal::<Grumpkin, TestDomain>(&pk, &note, aad, &mut rng).unwrap();
-    let opened = open::<Grumpkin, TestDomain, _>(&sk, &pk, &envelope, aad).unwrap();
+    let envelope =
+        seal::<Grumpkin, TestDomain>(me.public_key(), &note, aad, &mut rng).unwrap();
+    let opened = open::<Grumpkin, TestDomain, _>(&me, &envelope, aad).unwrap();
 
     assert_eq!(opened, Some(note));
 }

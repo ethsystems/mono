@@ -24,6 +24,7 @@ use crate::{
         OpenError,
     },
     kem::Kem,
+    recipient::Recipient,
     seal::{
         INFO_FIXED_LEN,
         cipher_from,
@@ -73,29 +74,33 @@ impl<K: Kem> ScanBuffers<K> {
 /// Scans in fixed-size chunks: `Kem::decap_batch` per chunk, then commit
 /// compare, then decrypt into reused scratch. A miss allocates nothing.
 pub struct Scanner<K: Kem, D: Domain> {
-    sk: K::SecretKey,
-    pk_r: K::Epk,
+    recipient: Recipient<K>,
     buffers: ScanBuffers<K>,
     _domain: PhantomData<fn() -> D>,
 }
 
 impl<K: Kem, D: Domain> Scanner<K, D> {
-    /// Builds a scanner for `sk`, whose corresponding public key is `pk_r`.
+    /// Builds a scanner for `recipient`.
     ///
     /// Pre-reserves the scratch and KDF-info buffers so a scan never grows
     /// them.
-    pub fn new(sk: K::SecretKey, pk_r: &K::PublicKey) -> Self {
+    pub fn new(recipient: Recipient<K>) -> Self {
         const { suite_asserts::<K, D>() };
 
-        let pk_r = K::encode_pk(pk_r);
-        let info_len =
-            INFO_FIXED_LEN + D::DOMAIN_TAG.len() + K::EPK_LEN + pk_r.as_ref().len();
+        let info_len = INFO_FIXED_LEN
+            + D::DOMAIN_TAG.len()
+            + K::EPK_LEN
+            + recipient.pk_encoded().len();
         Self {
-            sk,
-            pk_r,
+            recipient,
             buffers: ScanBuffers::new(info_len, MAX_CT_LEN),
             _domain: PhantomData,
         }
+    }
+
+    /// The recipient this scanner holds, whose public key senders seal to.
+    pub fn recipient(&self) -> &Recipient<K> {
+        &self.recipient
     }
 
     /// Scans `envelopes` under this scanner's key, binding `aad` into the
@@ -112,7 +117,6 @@ impl<K: Kem, D: Domain> Scanner<K, D> {
     ) -> impl Iterator<Item = (usize, Result<D::Note, Malformed>)> + use<'a, K, D, B, I>
     where
         K: 'a,
-        K::SharedSecret: AsRef<[u8]>,
         B: AsRef<[u8]> + 'a,
         I: IntoIterator<Item = &'a SealedNote<K, B>>,
     {
@@ -133,8 +137,8 @@ impl<K: Kem, D: Domain> Scanner<K, D> {
             }
 
             scan_chunk::<K, D, B>(
-                &self.sk,
-                self.pk_r.as_ref(),
+                self.recipient.secret_key(),
+                self.recipient.pk_encoded(),
                 aad,
                 &chunk[..chunk_len],
                 &mut self.buffers,
@@ -170,7 +174,6 @@ impl<K: Kem, D: Domain> Scanner<K, D> {
     where
         K: 'a,
         K::SecretKey: Sync,
-        K::SharedSecret: AsRef<[u8]>,
         D::Note: Send,
         B: AsRef<[u8]> + Sync + 'a,
         I: IntoIterator<Item = &'a SealedNote<K, B>>,
@@ -179,8 +182,8 @@ impl<K: Kem, D: Domain> Scanner<K, D> {
 
         const WINDOW: usize = SCAN_CHUNK * CHUNKS_IN_FLIGHT;
 
-        let sk = &self.sk;
-        let pk_r = self.pk_r.as_ref();
+        let sk = self.recipient.secret_key();
+        let pk_r = self.recipient.pk_encoded();
         let info_cap = self.buffers.info.capacity();
 
         let mut results = Vec::new();
@@ -243,7 +246,6 @@ fn scan_chunk<K, D, B>(
     K: Kem,
     D: Domain,
     B: AsRef<[u8]>,
-    K::SharedSecret: AsRef<[u8]>,
 {
     let len = chunk.len();
     debug_assert!(len <= SCAN_CHUNK, "a chunk fits the fixed-size buffers");
@@ -359,19 +361,20 @@ mod tests {
 
     #[test]
     fn scan_yields_correct_results_for_mixed_batch() {
-        let recipient = [7u8; 32];
+        let me = Recipient::<MockKem>::new([7u8; 32]);
         let stranger = [9u8; 32];
         let aad = b"scan-aad";
         let mut rng = ChaCha20Rng::seed_from_u64(11);
 
-        let mine = seal::<MockKem, TestDomain>(&recipient, &vec![1, 2, 3], aad, &mut rng)
-            .unwrap();
+        let mine =
+            seal::<MockKem, TestDomain>(me.public_key(), &vec![1, 2, 3], aad, &mut rng)
+                .unwrap();
         let not_mine =
             seal::<MockKem, TestDomain>(&stranger, &vec![4, 5, 6], aad, &mut rng)
                 .unwrap();
 
         let sealed_to_recipient =
-            seal::<MockKem, TestDomain>(&recipient, &vec![7, 8, 9], aad, &mut rng)
+            seal::<MockKem, TestDomain>(me.public_key(), &vec![7, 8, 9], aad, &mut rng)
                 .unwrap();
         let mut malformed_bytes = sealed_to_recipient.as_bytes().to_vec();
         let last = malformed_bytes.len() - 1;
@@ -380,7 +383,7 @@ mod tests {
 
         let envelopes = vec![&mine, &not_mine, &malformed];
 
-        let mut scanner = Scanner::<MockKem, TestDomain>::new(recipient, &recipient);
+        let mut scanner = Scanner::<MockKem, TestDomain>::new(me);
         let results: Vec<_> = scanner.scan(envelopes, aad).collect();
 
         assert_eq!(results.len(), 2);
@@ -400,6 +403,7 @@ mod tests {
         let aad = b"parallel-aad";
         let mut rng = ChaCha20Rng::seed_from_u64(31);
 
+        let me = Recipient::<MockKem>::new(recipient);
         let count = SCAN_CHUNK * CHUNKS_IN_FLIGHT * 2 + SCAN_CHUNK + 7;
         let envelopes: Vec<_> = (0..count)
             .map(|i| {
@@ -409,7 +413,7 @@ mod tests {
             .collect();
         let refs: Vec<_> = envelopes.iter().collect();
 
-        let mut scanner = Scanner::<MockKem, TestDomain>::new(recipient, &recipient);
+        let mut scanner = Scanner::<MockKem, TestDomain>::new(me);
         let sequential: Vec<_> = scanner.scan(refs.iter().copied(), aad).collect();
         let parallel: Vec<_> = scanner.scan_parallel(refs.iter().copied(), aad).collect();
 
@@ -434,7 +438,7 @@ mod tests {
             .collect();
         let refs: Vec<_> = envelopes.iter().collect();
 
-        let mut scanner = Scanner::<MockKem, TestDomain>::new(recipient, &recipient);
+        let mut scanner = Scanner::<MockKem, TestDomain>::new(Recipient::new(recipient));
         let results: Vec<_> = scanner.scan(refs, aad).collect();
 
         assert_eq!(results.len(), 4);
@@ -450,7 +454,7 @@ mod tests {
             seal::<MockKem, TestDomain>(&recipient, &vec![1u8], aad, &mut rng).unwrap();
         let refs = [&envelope];
 
-        let mut scanner = Scanner::<MockKem, TestDomain>::new(recipient, &recipient);
+        let mut scanner = Scanner::<MockKem, TestDomain>::new(Recipient::new(recipient));
         let first = scanner.scan(refs.iter().copied(), aad);
         let second = scanner.scan(refs.iter().copied(), aad);
 
@@ -461,7 +465,7 @@ mod tests {
     #[test]
     fn empty_batch_yields_nothing() {
         let recipient = [1u8; 32];
-        let mut scanner = Scanner::<MockKem, TestDomain>::new(recipient, &recipient);
+        let mut scanner = Scanner::<MockKem, TestDomain>::new(Recipient::new(recipient));
         let envelopes: Vec<&SealedNote<MockKem, Vec<u8>>> = Vec::new();
         let results: Vec<_> = scanner.scan(envelopes, b"aad").collect();
         assert!(results.is_empty());
@@ -487,7 +491,7 @@ mod tests {
             .collect();
         let refs: Vec<_> = envelopes.iter().collect();
 
-        let mut scanner = Scanner::<MockKem, TestDomain>::new(recipient, &recipient);
+        let mut scanner = Scanner::<MockKem, TestDomain>::new(Recipient::new(recipient));
         let results: Vec<_> = scanner.scan(refs, aad).collect();
 
         assert_eq!(results.len(), count);

@@ -19,6 +19,7 @@ use std::{
 };
 
 use oring::{
+    Recipient,
     Scanner,
     test_util::{
         MockKem,
@@ -81,7 +82,7 @@ fn scan_miss_path_allocates_nothing() {
         .collect();
     let refs: Vec<_> = envelopes.iter().collect();
 
-    let mut scanner = Scanner::<MockKem, TestDomain>::new(recipient, &recipient);
+    let mut scanner = Scanner::<MockKem, TestDomain>::new(Recipient::new(recipient));
 
     let before = ALLOCATIONS.load(Relaxed);
     let results: Vec<_> = scanner.scan(refs, aad).collect();
@@ -107,8 +108,7 @@ fn k256_scan_miss_path_allocates_nothing() {
     let aad = b"scan-alloc-k256-aad";
     let mut rng = ChaCha20Rng::seed_from_u64(77);
 
-    let recipient_sk = SecretKey::generate_from_rng(&mut rng);
-    let recipient_pk = recipient_sk.public_key();
+    let recipient = Recipient::<K256>::new(SecretKey::generate_from_rng(&mut rng));
     let stranger_pk = SecretKey::generate_from_rng(&mut rng).public_key();
 
     let envelopes: Vec<_> = (0..200)
@@ -124,7 +124,7 @@ fn k256_scan_miss_path_allocates_nothing() {
         .collect();
     let refs: Vec<_> = envelopes.iter().collect();
 
-    let mut scanner = Scanner::<K256, TestDomain>::new(recipient_sk, &recipient_pk);
+    let mut scanner = Scanner::<K256, TestDomain>::new(recipient);
 
     let before = ALLOCATIONS.load(Relaxed);
     let results: Vec<_> = scanner.scan(refs.iter().copied(), aad).collect();

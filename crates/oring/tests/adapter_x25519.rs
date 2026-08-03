@@ -1,11 +1,13 @@
 #![cfg(all(feature = "x25519", feature = "test-helpers"))]
 
 use oring::{
+    Recipient,
     X25519,
     open,
     seal,
     test_util::{
         TestDomain,
+        conformance_derive_pk_agrees,
         conformance_garbage_fails,
         conformance_low_order_fails,
         conformance_roundtrip,
@@ -80,6 +82,7 @@ fn conformance_suite() {
     conformance_low_order_fails::<X25519>(&sk, &cases);
 
     conformance_roundtrip::<X25519>(&mut rng, &pk, &sk);
+    conformance_derive_pk_agrees::<X25519>(&pk, &sk);
 }
 
 #[test]
@@ -100,13 +103,13 @@ fn sealing_to_a_low_order_key_fails() {
 #[test]
 fn seal_open_round_trips() {
     let mut rng = ChaCha20Rng::seed_from_u64(22);
-    let sk = StaticSecret::random_from_rng(&mut rng);
-    let pk = PublicKey::from(&sk);
+    let me = Recipient::<X25519>::new(StaticSecret::random_from_rng(&mut rng));
     let note = vec![1u8, 2, 3, 4, 5];
     let aad = b"x25519-adapter-test";
 
-    let envelope = seal::<X25519, TestDomain>(&pk, &note, aad, &mut rng).unwrap();
-    let opened = open::<X25519, TestDomain, _>(&sk, &pk, &envelope, aad).unwrap();
+    let envelope =
+        seal::<X25519, TestDomain>(me.public_key(), &note, aad, &mut rng).unwrap();
+    let opened = open::<X25519, TestDomain, _>(&me, &envelope, aad).unwrap();
 
     assert_eq!(opened, Some(note));
 }

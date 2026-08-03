@@ -21,8 +21,8 @@ use common::{
     AAD,
     GenKeypair,
     NOTE_LEN,
+    bench_recipient,
     build_envelopes,
-    recipient_keypair,
 };
 
 const COUNTS: [usize; 2] = [1_024, 16_384];
@@ -56,7 +56,6 @@ fn bench_scan_adapter<K>(c: &mut Criterion, adapter: &str, counts: &[usize])
 where
     K: Kem + GenKeypair,
     K::SecretKey: Sync,
-    K::SharedSecret: AsRef<[u8]> + Sync,
 {
     for n in counts.iter().copied() {
         let mut group = c.benchmark_group(format!("oring::scan/adapter={adapter} n={n}"));
@@ -65,17 +64,21 @@ where
         for hit_rate in HIT_RATES {
             let hit_pct = (hit_rate * 100.0).round() as u32;
 
-            let (pk, sk_naive) = recipient_keypair::<K>();
-            let (_, sk_scan) = recipient_keypair::<K>();
-            let envelopes = build_envelopes::<K, TestDomain>(&pk, n, hit_rate, NOTE_LEN);
+            let naive = bench_recipient::<K>();
+            let scan = bench_recipient::<K>();
+            let envelopes = build_envelopes::<K, TestDomain>(
+                naive.public_key(),
+                n,
+                hit_rate,
+                NOTE_LEN,
+            );
             let refs: Vec<_> = envelopes.iter().collect();
 
             group.bench_function(format!("method=naive hit={hit_pct}%"), |b| {
                 b.iter(|| {
                     for envelope in black_box(&refs).iter().copied() {
                         let _ = black_box(open::<K, TestDomain, _>(
-                            &sk_naive,
-                            &pk,
+                            &naive,
                             envelope,
                             black_box(AAD),
                         ));
@@ -83,7 +86,7 @@ where
                 });
             });
 
-            let mut scanner = Scanner::<K, TestDomain>::new(sk_scan, &pk);
+            let mut scanner = Scanner::<K, TestDomain>::new(scan);
             group.bench_function(format!("method=chunked hit={hit_pct}%"), |b| {
                 b.iter(|| {
                     black_box(
@@ -146,16 +149,16 @@ fn bench_scan_note_len(c: &mut Criterion) {
         for hit_rate in NOTE_LEN_HIT_RATES {
             let hit_pct = (hit_rate * 100.0).round() as u32;
 
-            let (pk, sk_scan) = recipient_keypair::<X25519>();
+            let me = bench_recipient::<X25519>();
             let envelopes = build_envelopes::<X25519, TestDomain>(
-                &pk,
+                me.public_key(),
                 NOTE_LEN_COUNT,
                 hit_rate,
                 note_len,
             );
             let refs: Vec<_> = envelopes.iter().collect();
 
-            let mut scanner = Scanner::<X25519, TestDomain>::new(sk_scan, &pk);
+            let mut scanner = Scanner::<X25519, TestDomain>::new(me);
             group.bench_function(format!("method=chunked hit={hit_pct}%"), |b| {
                 b.iter(|| {
                     black_box(

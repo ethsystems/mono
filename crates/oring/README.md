@@ -19,7 +19,7 @@ The crate owns one fixed, hardened protocol flow (suite v1: HKDF-SHA256 plus Cha
 - the AEAD nonce is derived from the KDF. It binds the nonce to the same transcript as the key, so a key-schedule edit that changes one changes both, and an implementer never picks a nonce by hand. It buys nothing against an RNG replay: a replayed ephemeral key reproduces the shared secret, hence the key and the nonce alike. Callers who need to survive a VM snapshot or fork must rotate the recipient key or bind a counter into the AAD.
 - every envelope carries a key-commitment tag (`commit`, CTX-style). ChaCha20-Poly1305 is not key-committing on its own, so one crafted ciphertext could otherwise open validly under two different recipients' keys to two different plaintexts, and a trial-decryption scanner would accept it automatically. `open` recomputes `commit` and compares it in constant time before the AEAD ever runs.
 - anonymous sender by design: there is no sender authentication anywhere in the envelope, and none is planned.
-- adapter correctness is enforced by a conformance test suite (`test-helpers` feature), not by trait bounds: garbage byte strings, low-order points, the identity point, and all-zero Diffie-Hellman outputs must all fail to decapsulate. Third-party `Kem` implementations are expected to run it.
+- adapter correctness is enforced by a conformance test suite (`test-helpers` feature), not by trait bounds: garbage byte strings, low-order points, the identity point, and all-zero Diffie-Hellman outputs must all fail to decapsulate, and `derive_pk` must reproduce the public key belonging to a secret key. Third-party `Kem` implementations are expected to run it.
 - secret hygiene is not decorative: `SecretKey` and `SharedSecret` carry no `Debug`, `Clone`, or derived `PartialEq`; commit comparison and other secret-adjacent equality checks go through `subtle`; every `SharedSecret` is zeroized once consumed, including scanner scratch buffers, derived key material, and batch out-slots. One residue is upstream: `hkdf` 0.13 keeps the extracted PRK inside an HMAC state that has no `Zeroize` impl, so that copy lives until the allocation is reused.
 
 <!-- ANCHOR_END: design -->
@@ -31,10 +31,10 @@ The crate owns one fixed, hardened protocol flow (suite v1: HKDF-SHA256 plus Cha
 ```rust,ignore
 use std::convert::Infallible;
 
-use oring::{Domain, open, seal};
+use oring::{Domain, Recipient, open, seal};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
-use x25519_dalek::{PublicKey, StaticSecret};
+use x25519_dalek::StaticSecret;
 
 struct WalletDomain;
 
@@ -56,18 +56,19 @@ impl Domain for WalletDomain {
 }
 
 let mut rng = ChaCha20Rng::seed_from_u64(42);
-let sk = StaticSecret::random_from_rng(&mut rng);
-let pk = PublicKey::from(&sk);
+
+let me = Recipient::<oring::X25519>::new(StaticSecret::random_from_rng(&mut rng));
 
 let note = b"pay alice 5 units".to_vec();
 let aad = b"block-height:1000";
 
-let envelope = seal::<oring::X25519, WalletDomain>(&pk, &note, aad, &mut rng).unwrap();
-let opened = open::<oring::X25519, WalletDomain, _>(&sk, &pk, &envelope, aad).unwrap();
+let envelope =
+    seal::<oring::X25519, WalletDomain>(me.public_key(), &note, aad, &mut rng).unwrap();
+let opened = open::<oring::X25519, WalletDomain, _>(&me, &envelope, aad).unwrap();
 assert_eq!(opened, Some(note));
 ```
 
-The snippet above is illustrative; `examples/seal_open.rs` is the compiled version. It runs this end to end and adds `Scanner`, the batch path: instead of calling `open` once per envelope, a wallet builds one `Scanner` for its key and scans a whole inbox in fixed-size chunks. A commit mismatch means the envelope was not addressed to this key and is skipped; a commit match with a failure afterward (AEAD, note decoding, `Domain::verify`) means an authenticated envelope that is wrong, and is surfaced as `Err(Malformed)` rather than dropped, because silently dropping an authenticated note can lock funds invisibly.
+The snippet above is illustrative; `examples/seal_open.rs` is the compiled version. It runs this end to end and adds `Scanner`, the batch path: instead of calling `open` once per envelope, a wallet builds one `Scanner` from its `Recipient` and scans a whole inbox in fixed-size chunks. A commit mismatch means the envelope was not addressed to this key and is skipped; a commit match with a failure afterward (AEAD, note decoding, `Domain::verify`) means an authenticated envelope that is wrong, and is surfaced as `Err(Malformed)` rather than dropped, because silently dropping an authenticated note can lock funds invisibly.
 
 ```
 cargo run -p oring --example seal_open --features x25519

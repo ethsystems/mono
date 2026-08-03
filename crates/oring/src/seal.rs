@@ -32,6 +32,7 @@ use crate::{
         SealError,
     },
     kem::Kem,
+    recipient::Recipient,
 };
 
 /// Domain-separation salt for the suite v1 HKDF-SHA256 extract step.
@@ -194,10 +195,7 @@ pub fn seal<K: Kem, D: Domain>(
     note: &D::Note,
     aad: &[u8],
     rng: &mut impl CryptoRng,
-) -> Result<SealedNote<K, Vec<u8>>, SealError>
-where
-    K::SharedSecret: AsRef<[u8]>,
-{
+) -> Result<SealedNote<K, Vec<u8>>, SealError> {
     const { suite_asserts::<K, D>() };
 
     let (epk, mut shared) = K::encap(rng, pk);
@@ -241,35 +239,33 @@ where
     SealedNote::parse(bytes).map_err(|_| SealError)
 }
 
-/// Opens `envelope` under `sk`, using the recipient's own public key
-/// `pk_r` to reproduce the KDF binding, and binding `aad` into the AEAD.
+/// Opens `envelope` for `recipient`, whose public key reproduces the KDF
+/// binding, and binds `aad` into the AEAD.
 ///
-/// Returns `Ok(None)` when the commit does not match `sk`: the envelope was
-/// not addressed to this key, which is not an error. Returns `Err` when the
+/// Returns `Ok(None)` when the commit does not match this key: the envelope
+/// was not addressed to it, which is not an error. Returns `Err` when the
 /// commit matches but AEAD decryption, note decoding, or `Domain::verify`
 /// fails: an authenticated envelope that is wrong.
+///
+/// Opening more than one envelope reuses one [`Recipient`], which holds the
+/// encoded public key this derivation needs.
 pub fn open<K: Kem, D: Domain, B: AsRef<[u8]>>(
-    sk: &K::SecretKey,
-    pk_r: &K::PublicKey,
+    recipient: &Recipient<K>,
     envelope: &SealedNote<K, B>,
     aad: &[u8],
-) -> Result<Option<D::Note>, OpenError>
-where
-    K::SharedSecret: AsRef<[u8]>,
-{
+) -> Result<Option<D::Note>, OpenError> {
     const { suite_asserts::<K, D>() };
 
-    let Some(shared) = K::decap(sk, envelope.epk()) else {
+    let Some(shared) = K::decap(recipient.secret_key(), envelope.epk()) else {
         return Ok(None);
     };
 
-    let pk_r_encoded = K::encode_pk(pk_r);
     let derived = derive(
         shared,
         K::KEM_ID,
         D::DOMAIN_TAG,
         envelope.epk(),
-        pk_r_encoded.as_ref(),
+        recipient.pk_encoded(),
     );
 
     let commit_matches: bool = derived
@@ -398,16 +394,14 @@ mod tests {
 
     #[test]
     fn seal_then_open_round_trips() {
-        let recipient = [5u8; 32];
+        let me = Recipient::<MockKem>::new([5u8; 32]);
         let note = vec![1u8, 2, 3, 4, 5];
         let aad = b"context";
         let mut rng = ChaCha20Rng::seed_from_u64(7);
 
         let envelope =
-            seal::<MockKem, TestDomain>(&recipient, &note, aad, &mut rng).unwrap();
-        let opened =
-            open::<MockKem, TestDomain, _>(&recipient, &recipient, &envelope, aad)
-                .unwrap();
+            seal::<MockKem, TestDomain>(me.public_key(), &note, aad, &mut rng).unwrap();
+        let opened = open::<MockKem, TestDomain, _>(&me, &envelope, aad).unwrap();
 
         assert_eq!(opened, Some(note));
     }
@@ -415,35 +409,33 @@ mod tests {
     #[test]
     fn open_with_wrong_sk_returns_none_not_error() {
         let recipient_a = [1u8; 32];
-        let recipient_b = [2u8; 32];
+        let recipient_b = Recipient::<MockKem>::new([2u8; 32]);
         let note = vec![5u8, 6, 7];
         let aad = b"aad";
         let mut rng = ChaCha20Rng::seed_from_u64(2);
 
         let envelope =
             seal::<MockKem, TestDomain>(&recipient_a, &note, aad, &mut rng).unwrap();
-        let result =
-            open::<MockKem, TestDomain, _>(&recipient_b, &recipient_b, &envelope, aad);
+        let result = open::<MockKem, TestDomain, _>(&recipient_b, &envelope, aad);
 
         assert!(matches!(result, Ok(None)));
     }
 
     #[test]
     fn any_single_byte_flip_never_opens() {
-        let recipient = [33u8; 32];
+        let me = Recipient::<MockKem>::new([33u8; 32]);
         let note = vec![9u8, 8, 7, 6];
         let aad = b"aad";
         let mut rng = ChaCha20Rng::seed_from_u64(4);
         let envelope =
-            seal::<MockKem, TestDomain>(&recipient, &note, aad, &mut rng).unwrap();
+            seal::<MockKem, TestDomain>(me.public_key(), &note, aad, &mut rng).unwrap();
         let original = envelope.as_bytes().to_vec();
 
         for i in 0..original.len() {
             let mut flipped = original.clone();
             flipped[i] ^= 0x01;
             if let Ok(parsed) = SealedNote::<MockKem, Vec<u8>>::parse(flipped) {
-                let result =
-                    open::<MockKem, TestDomain, _>(&recipient, &recipient, &parsed, aad);
+                let result = open::<MockKem, TestDomain, _>(&me, &parsed, aad);
                 assert!(
                     !matches!(result, Ok(Some(_))),
                     "byte {i} flip must not open"
@@ -455,7 +447,7 @@ mod tests {
     #[test]
     fn different_recipients_produce_unopenable_cross_envelope() {
         let recipient_a = [11u8; 32];
-        let recipient_b = [22u8; 32];
+        let recipient_b = Recipient::<MockKem>::new([22u8; 32]);
         let note = vec![1u8, 2, 3];
         let aad = b"aad";
         let mut rng = ChaCha20Rng::seed_from_u64(3);
@@ -463,25 +455,24 @@ mod tests {
         let envelope_a =
             seal::<MockKem, TestDomain>(&recipient_a, &note, aad, &mut rng).unwrap();
         let envelope_b =
-            seal::<MockKem, TestDomain>(&recipient_b, &note, aad, &mut rng).unwrap();
+            seal::<MockKem, TestDomain>(recipient_b.public_key(), &note, aad, &mut rng)
+                .unwrap();
 
         assert_ne!(envelope_a.as_bytes(), envelope_b.as_bytes());
-        let result =
-            open::<MockKem, TestDomain, _>(&recipient_b, &recipient_b, &envelope_a, aad);
+        let result = open::<MockKem, TestDomain, _>(&recipient_b, &envelope_a, aad);
         assert!(matches!(result, Ok(None)));
     }
 
     #[test]
     fn cross_domain_tag_yields_nothing() {
-        let recipient = [9u8; 32];
+        let me = Recipient::<MockKem>::new([9u8; 32]);
         let note = vec![10u8, 20, 30];
         let aad = b"aad";
         let mut rng = ChaCha20Rng::seed_from_u64(1);
 
         let envelope =
-            seal::<MockKem, TestDomain>(&recipient, &note, aad, &mut rng).unwrap();
-        let result =
-            open::<MockKem, OtherDomain, _>(&recipient, &recipient, &envelope, aad);
+            seal::<MockKem, TestDomain>(me.public_key(), &note, aad, &mut rng).unwrap();
+        let result = open::<MockKem, OtherDomain, _>(&me, &envelope, aad);
 
         assert!(matches!(result, Ok(None)));
     }
@@ -502,24 +493,30 @@ mod tests {
 
     #[test]
     fn decode_rejection_surfaces_as_note_decode() {
-        let recipient = [17u8; 32];
+        let me = Recipient::<MockKem>::new([17u8; 32]);
         let aad = b"aad";
         let mut rng = ChaCha20Rng::seed_from_u64(17);
 
         // Sealed under a domain that encodes anything, opened under one whose
         // decoder rejects the plaintext: same tag, so the commit still matches.
-        let envelope =
-            seal::<MockKem, PermissiveDomain>(&recipient, &vec![0x00, 1], aad, &mut rng)
-                .unwrap();
-        let result =
-            open::<MockKem, PickyDomain, _>(&recipient, &recipient, &envelope, aad);
+        let envelope = seal::<MockKem, PermissiveDomain>(
+            me.public_key(),
+            &vec![0x00, 1],
+            aad,
+            &mut rng,
+        )
+        .unwrap();
+        let result = open::<MockKem, PickyDomain, _>(&me, &envelope, aad);
         assert_eq!(result, Err(OpenError::NoteDecode));
 
-        let accepted =
-            seal::<MockKem, PermissiveDomain>(&recipient, &vec![0xA5, 1], aad, &mut rng)
-                .unwrap();
-        let opened =
-            open::<MockKem, PickyDomain, _>(&recipient, &recipient, &accepted, aad);
+        let accepted = seal::<MockKem, PermissiveDomain>(
+            me.public_key(),
+            &vec![0xA5, 1],
+            aad,
+            &mut rng,
+        )
+        .unwrap();
+        let opened = open::<MockKem, PickyDomain, _>(&me, &accepted, aad);
         assert_eq!(opened, Ok(Some(vec![0xA5, 1])));
     }
 

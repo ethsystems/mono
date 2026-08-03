@@ -5,20 +5,14 @@
     feature = "grumpkin"
 ))]
 
-use ark_ec::{
-    AffineRepr,
-    CurveGroup,
-};
 use ark_ff::PrimeField;
-use ark_grumpkin::{
-    Affine,
-    Fr,
-};
+use ark_grumpkin::Fr;
 use k256::elliptic_curve::Generate;
 use oring::{
     Grumpkin,
     K256,
     Kem,
+    Recipient,
     X25519,
     open,
     seal,
@@ -32,48 +26,40 @@ use rand_core::{
     CryptoRng,
     SeedableRng,
 };
-use x25519_dalek::{
-    PublicKey as X25519PublicKey,
-    StaticSecret,
-};
+use x25519_dalek::StaticSecret;
 
-/// Draws a fresh keypair for the matrix test, one impl per adapter under
-/// test.
+/// Draws a fresh secret key for the matrix test, one impl per adapter under
+/// test. The matching public key comes from `Kem::derive_pk`, so no impl
+/// here restates how a keypair pairs up.
 trait MatrixKem: Kem {
-    fn matrix_keypair(rng: &mut impl CryptoRng) -> (Self::PublicKey, Self::SecretKey);
+    fn matrix_sk(rng: &mut impl CryptoRng) -> Self::SecretKey;
 }
 
 impl MatrixKem for MockKem {
-    fn matrix_keypair(rng: &mut impl CryptoRng) -> (Self::PublicKey, Self::SecretKey) {
+    fn matrix_sk(rng: &mut impl CryptoRng) -> Self::SecretKey {
         let mut sk = [0u8; 32];
         rng.fill_bytes(&mut sk);
-        (sk, sk)
+        sk
     }
 }
 
 impl MatrixKem for K256 {
-    fn matrix_keypair(rng: &mut impl CryptoRng) -> (Self::PublicKey, Self::SecretKey) {
-        let sk = k256::SecretKey::generate_from_rng(rng);
-        let pk = sk.public_key();
-        (pk, sk)
+    fn matrix_sk(rng: &mut impl CryptoRng) -> Self::SecretKey {
+        k256::SecretKey::generate_from_rng(rng)
     }
 }
 
 impl MatrixKem for X25519 {
-    fn matrix_keypair(rng: &mut impl CryptoRng) -> (Self::PublicKey, Self::SecretKey) {
-        let sk = StaticSecret::random_from_rng(rng);
-        let pk = X25519PublicKey::from(&sk);
-        (pk, sk)
+    fn matrix_sk(rng: &mut impl CryptoRng) -> Self::SecretKey {
+        StaticSecret::random_from_rng(rng)
     }
 }
 
 impl MatrixKem for Grumpkin {
-    fn matrix_keypair(rng: &mut impl CryptoRng) -> (Self::PublicKey, Self::SecretKey) {
+    fn matrix_sk(rng: &mut impl CryptoRng) -> Self::SecretKey {
         let mut bytes = [0u8; 64];
         rng.fill_bytes(&mut bytes);
-        let sk = Fr::from_le_bytes_mod_order(&bytes);
-        let pk = (Affine::generator() * sk).into_affine();
-        (pk, sk)
+        Fr::from_le_bytes_mod_order(&bytes)
     }
 }
 
@@ -85,14 +71,15 @@ fn gen_matrix_round_trip(kems: Vec<String>) {
             #[test]
             fn round_trip_{{suffix}}() {
                 let mut rng = ChaCha20Rng::seed_from_u64(1);
-                let (pk, sk) = {{kem}}::matrix_keypair(&mut rng);
+                let me = Recipient::<{{kem}}>::new({{kem}}::matrix_sk(&mut rng));
                 let note = vec![1u8, 2, 3, 4, 5];
                 let aad = b"matrix-aad";
 
                 let envelope =
-                    seal::<{{kem}}, TestDomain>(&pk, &note, aad, &mut rng).unwrap();
+                    seal::<{{kem}}, TestDomain>(me.public_key(), &note, aad, &mut rng)
+                        .unwrap();
                 let opened =
-                    open::<{{kem}}, TestDomain, _>(&sk, &pk, &envelope, aad).unwrap();
+                    open::<{{kem}}, TestDomain, _>(&me, &envelope, aad).unwrap();
 
                 assert_eq!(opened, Some(note));
             }
@@ -110,15 +97,19 @@ fn gen_matrix_wrong_key(kems: Vec<String>) {
             #[test]
             fn wrong_key_{{suffix}}() {
                 let mut rng = ChaCha20Rng::seed_from_u64(2);
-                let (pk_a, _sk_a) = {{kem}}::matrix_keypair(&mut rng);
-                let (pk_b, sk_b) = {{kem}}::matrix_keypair(&mut rng);
+                let stranger = Recipient::<{{kem}}>::new({{kem}}::matrix_sk(&mut rng));
+                let me = Recipient::<{{kem}}>::new({{kem}}::matrix_sk(&mut rng));
                 let note = vec![9u8, 8, 7];
                 let aad = b"matrix-wrong-key-aad";
 
-                let envelope =
-                    seal::<{{kem}}, TestDomain>(&pk_a, &note, aad, &mut rng).unwrap();
-                let result =
-                    open::<{{kem}}, TestDomain, _>(&sk_b, &pk_b, &envelope, aad);
+                let envelope = seal::<{{kem}}, TestDomain>(
+                    stranger.public_key(),
+                    &note,
+                    aad,
+                    &mut rng,
+                )
+                .unwrap();
+                let result = open::<{{kem}}, TestDomain, _>(&me, &envelope, aad);
 
                 assert!(matches!(result, Ok(None)));
             }

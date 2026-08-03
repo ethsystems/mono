@@ -2,9 +2,6 @@ use rand_core::CryptoRng;
 use zeroize::Zeroize;
 
 /// Curve-generic key-encapsulation mechanism.
-///
-/// Static dispatch only: the generic rng parameter makes this trait not
-/// dyn-compatible, by design.
 pub trait Kem {
     /// Recipient long-term public key.
     type PublicKey;
@@ -16,10 +13,10 @@ pub trait Kem {
     /// Ephemeral public key carried in the envelope alongside the ciphertext.
     type Epk: AsRef<[u8]>;
 
-    /// Per-envelope KEM output fed into HKDF. The crate calls
-    /// [`Zeroize::zeroize`] on every value it owns once that value has been
-    /// consumed, so an implementor is free to derive `Zeroize` alone.
-    type SharedSecret: Zeroize;
+    /// Per-envelope KEM output fed into HKDF, viewed as the bytes the KDF
+    /// extracts from. The crate calls [`Zeroize::zeroize`] on every value it
+    /// owns once that value has been consumed.
+    type SharedSecret: Zeroize + AsRef<[u8]>;
 
     /// Wire identifier for this KEM, carried in the envelope header.
     const KEM_ID: u8;
@@ -39,6 +36,14 @@ pub trait Kem {
     /// Returns `None` for invalid points and for non-contributory results,
     /// for example the all-zero X25519 output produced by a low-order point.
     fn decap(sk: &Self::SecretKey, epk: &[u8]) -> Option<Self::SharedSecret>;
+
+    /// Derives the public key belonging to `sk`.
+    ///
+    /// [`Recipient`](crate::Recipient) calls this so the secret key that
+    /// decapsulates and the public key bound into the KDF always come from
+    /// the same keypair. An adapter proves its implementation with
+    /// `conformance_derive_pk_agrees` from the `test-helpers` suite.
+    fn derive_pk(sk: &Self::SecretKey) -> Self::PublicKey;
 
     /// Encodes `pk` in the same format as `Epk`.
     fn encode_pk(pk: &Self::PublicKey) -> Self::Epk;

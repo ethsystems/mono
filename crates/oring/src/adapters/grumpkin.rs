@@ -110,6 +110,10 @@ impl Kem for Grumpkin {
         Some(GrumpkinSharedSecret(x_coordinate(&shared)?))
     }
 
+    fn derive_pk(sk: &Self::SecretKey) -> Self::PublicKey {
+        (Affine::generator() * *sk).into_affine()
+    }
+
     fn encode_pk(pk: &Self::PublicKey) -> Self::Epk {
         compress(pk)
     }

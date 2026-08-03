@@ -24,6 +24,7 @@ mod domain;
 mod envelope;
 mod error;
 mod kem;
+mod recipient;
 mod scan;
 mod seal;
 
@@ -45,6 +46,7 @@ pub use error::{
     SealError,
 };
 pub use kem::Kem;
+pub use recipient::Recipient;
 pub use scan::{
     SCAN_CHUNK,
     Scanner,

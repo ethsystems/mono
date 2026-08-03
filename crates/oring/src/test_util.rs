@@ -81,6 +81,10 @@ impl Kem for MockKem {
         Some(MockSharedSecret(xor32(epk, sk)))
     }
 
+    fn derive_pk(sk: &Self::SecretKey) -> Self::PublicKey {
+        *sk
+    }
+
     fn encode_pk(pk: &Self::PublicKey) -> Self::Epk {
         *pk
     }
@@ -140,10 +144,21 @@ pub fn conformance_roundtrip<K: Kem>(
     rng: &mut impl CryptoRng,
     pk: &K::PublicKey,
     sk: &K::SecretKey,
-) where
-    K::SharedSecret: AsRef<[u8]>,
-{
+) {
     let (epk, expected) = K::encap(rng, pk);
     let actual = K::decap(sk, epk.as_ref()).expect("matching sk must decap");
     assert_eq!(expected.as_ref(), actual.as_ref());
+}
+
+/// Asserts `derive_pk` reproduces `pk` from `sk`, the property
+/// [`Recipient`](crate::Recipient) rests on: a keypair it builds binds the
+/// same public key into the KDF that the sender sealed to. An adapter that
+/// gets this wrong turns every note addressed to `sk` into a commit
+/// mismatch, which the receive path reads as "not mine".
+pub fn conformance_derive_pk_agrees<K: Kem>(pk: &K::PublicKey, sk: &K::SecretKey) {
+    assert_eq!(
+        K::encode_pk(&K::derive_pk(sk)).as_ref(),
+        K::encode_pk(pk).as_ref(),
+        "derive_pk must reproduce the public key belonging to sk"
+    );
 }

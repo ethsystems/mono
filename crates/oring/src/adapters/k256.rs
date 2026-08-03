@@ -65,6 +65,10 @@ impl Kem for K256 {
         Some(K256SharedSecret(*bytes))
     }
 
+    fn derive_pk(sk: &Self::SecretKey) -> Self::PublicKey {
+        sk.public_key()
+    }
+
     fn encode_pk(pk: &Self::PublicKey) -> Self::Epk {
         let sec1 = pk.to_sec1_bytes();
         let mut epk = [0u8; K256_EPK_LEN];
