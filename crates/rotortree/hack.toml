@@ -1,0 +1,3 @@
+depth = 2
+skip = ["docs", "test-helpers"]
+group = [["serde", "wincode"]]

@@ -13,6 +13,10 @@ repository = "https://github.com/ethsystems/mono"
 lto = "fat"
 codegen-units = 1
 
+# constant-time crates need real codegen to keep their timing properties.
+[profile.test]
+opt-level = 2
+
 [profile.profiling]
 inherits = "release"
 debug = true
