@@ -31,15 +31,15 @@ ark-grumpkin = { version = "0.6", default-features = false, optional = true }
 ark-ec = { version = "0.6", default-features = false, optional = true }
 ark-ff = { version = "0.6", default-features = false, optional = true }
 ark-serialize = { version = "0.6", default-features = false, optional = true }
-rayon = { version = "1.10", optional = true }
-serde = { version = "1", default-features = false, features = ["derive", "alloc"], optional = true }
-include-utils = { version = "0.2.4", optional = true }
-wincode = { version = "0.6", default-features = false, features = ["alloc", "derive"], optional = true }
+rayon = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive", "alloc"], optional = true }
+include-utils = { workspace = true, optional = true }
+wincode = { workspace = true, features = ["alloc", "derive"], optional = true }
 
 [dev-dependencies]
-proptest = "1"
-crabtime = "1.1.4"
-criterion = { version = "0.8", features = ["html_reports"] }
+proptest = { workspace = true, features = ["std", "fork", "timeout", "bit-set"] }
+crabtime = { workspace = true, features = ["std"] }
+criterion = { workspace = true, features = ["rayon", "plotters", "cargo_bench_support", "html_reports"] }
 rand_chacha = "0.10"
 
 [features]
