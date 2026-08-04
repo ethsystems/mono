@@ -36,7 +36,7 @@ use crate::{
 };
 
 /// Domain-separation salt for the suite v1 HKDF-SHA256 extract step.
-pub(crate) const SALT: &[u8] = b"oring/v1";
+pub(crate) const SALT: &[u8] = b"sealring/v1";
 
 /// Byte length of the suite v1 symmetric key.
 pub(crate) const KEY_LEN: usize = 32;
@@ -329,7 +329,7 @@ mod tests {
         type Error = Infallible;
         type Note = Vec<u8>;
 
-        const DOMAIN_TAG: &'static str = "oring-test-other";
+        const DOMAIN_TAG: &'static str = "sealring-test-other";
 
         fn encode_note(note: &Self::Note, out: &mut Vec<u8>) -> Result<(), Self::Error> {
             out.extend_from_slice(note);
@@ -352,7 +352,7 @@ mod tests {
         type Error = NoteRejected;
         type Note = Vec<u8>;
 
-        const DOMAIN_TAG: &'static str = "oring-test-picky";
+        const DOMAIN_TAG: &'static str = "sealring-test-picky";
 
         fn encode_note(note: &Self::Note, out: &mut Vec<u8>) -> Result<(), Self::Error> {
             // Push before the check so a rejection leaves a partial encoding
@@ -534,10 +534,10 @@ mod tests {
         #[rustfmt::skip]
         const EXPECTED: &[u8] = &[
             1, 255, 178, 247, 245, 129, 214, 222, 60, 6, 168, 34, 253, 110, 126, 130, 101, 251,
-            192, 15, 132, 1, 105, 106, 91, 220, 52, 245, 166, 210, 255, 63, 146, 47, 46, 134,
-            139, 218, 128, 122, 145, 235, 151, 63, 171, 141, 27, 9, 224, 151, 1, 219, 71, 0,
-            126, 157, 43, 90, 238, 97, 157, 215, 251, 8, 48, 126, 16, 243, 172, 189, 242, 9,
-            9, 151, 165, 88, 30, 138, 250, 89, 134, 187, 149, 58, 228, 233,
+            192, 15, 132, 1, 105, 106, 91, 220, 52, 245, 166, 210, 255, 63, 146, 47, 232, 123,
+            147, 237, 191, 7, 21, 77, 211, 14, 231, 235, 141, 90, 24, 140, 87, 32, 55, 137,
+            153, 234, 185, 252, 230, 216, 24, 18, 50, 29, 124, 123, 73, 227, 90, 166, 201, 106,
+            179, 159, 168, 59, 165, 25, 112, 163, 182, 17, 197, 129, 107, 190,
         ];
         assert_eq!(envelope.as_bytes(), EXPECTED);
     }

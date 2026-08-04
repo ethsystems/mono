@@ -90,14 +90,14 @@ impl Kem for MockKem {
     }
 }
 
-/// Toy domain: notes are raw bytes, tag `"oring-test"`.
+/// Toy domain: notes are raw bytes, tag `"sealring-test"`.
 pub struct TestDomain;
 
 impl Domain for TestDomain {
     type Error = Infallible;
     type Note = Vec<u8>;
 
-    const DOMAIN_TAG: &'static str = "oring-test";
+    const DOMAIN_TAG: &'static str = "sealring-test";
 
     fn encode_note(note: &Self::Note, out: &mut Vec<u8>) -> Result<(), Self::Error> {
         out.extend_from_slice(note);

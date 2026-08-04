@@ -8,7 +8,12 @@
 use ark_ff::PrimeField;
 use ark_grumpkin::Fr;
 use k256::elliptic_curve::Generate;
-use oring::{
+use rand_chacha::ChaCha20Rng;
+use rand_core::{
+    CryptoRng,
+    SeedableRng,
+};
+use sealring::{
     Grumpkin,
     K256,
     Kem,
@@ -20,11 +25,6 @@ use oring::{
         MockKem,
         TestDomain,
     },
-};
-use rand_chacha::ChaCha20Rng;
-use rand_core::{
-    CryptoRng,
-    SeedableRng,
 };
 use x25519_dalek::StaticSecret;
 

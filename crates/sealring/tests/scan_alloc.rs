@@ -18,7 +18,9 @@ use std::{
     },
 };
 
-use oring::{
+use rand_chacha::ChaCha20Rng;
+use rand_core::SeedableRng;
+use sealring::{
     Recipient,
     Scanner,
     test_util::{
@@ -26,8 +28,6 @@ use oring::{
         TestDomain,
     },
 };
-use rand_chacha::ChaCha20Rng;
-use rand_core::SeedableRng;
 
 static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
 
@@ -71,7 +71,7 @@ fn scan_miss_path_allocates_nothing() {
 
     let envelopes: Vec<_> = (0..200)
         .map(|i| {
-            oring::seal::<MockKem, TestDomain>(
+            sealring::seal::<MockKem, TestDomain>(
                 &stranger,
                 &vec![(i % 256) as u8],
                 aad,
@@ -101,7 +101,7 @@ fn k256_scan_miss_path_allocates_nothing() {
         SecretKey,
         elliptic_curve::Generate,
     };
-    use oring::K256;
+    use sealring::K256;
 
     let _measuring = measuring();
 
@@ -113,7 +113,7 @@ fn k256_scan_miss_path_allocates_nothing() {
 
     let envelopes: Vec<_> = (0..200)
         .map(|i| {
-            oring::seal::<K256, TestDomain>(
+            sealring::seal::<K256, TestDomain>(
                 &stranger_pk,
                 &vec![(i % 256) as u8],
                 aad,

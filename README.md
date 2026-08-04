@@ -7,11 +7,15 @@ Rust 1.95.0 (pinned via [`rust-toolchain.toml`](rust-toolchain.toml)).
 ## Crates
 
 - [`rotortree`](crates/rotortree): n-ary leanIMT implementation with persistence, for high-throughput append-only merkle trees.
-- [`oring`](crates/oring): A generic sealed-note envelope
+- [`sealring`](crates/sealring): A generic sealed-note envelope
 
 ## Security
 
 See [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy.
+
+## Publishing
+
+See [PUBLISH.md](PUBLISH.md) for how maintainers release a crate.
 
 ## License
 

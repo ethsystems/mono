@@ -6,7 +6,9 @@ use criterion::{
     criterion_group,
     criterion_main,
 };
-use oring::{
+use rand_chacha::ChaCha20Rng;
+use rand_core::SeedableRng;
+use sealring::{
     Grumpkin,
     K256,
     Kem,
@@ -14,8 +16,6 @@ use oring::{
     seal,
     test_util::TestDomain,
 };
-use rand_chacha::ChaCha20Rng;
-use rand_core::SeedableRng;
 
 mod common;
 use common::{
@@ -35,7 +35,7 @@ fn bench_seal_adapter<K>(c: &mut Criterion, adapter: &str)
 where
     K: Kem + GenKeypair,
 {
-    let mut group = c.benchmark_group(format!("oring::seal/adapter={adapter}"));
+    let mut group = c.benchmark_group(format!("sealring::seal/adapter={adapter}"));
 
     let me = bench_recipient::<K>();
     let pk = me.public_key();

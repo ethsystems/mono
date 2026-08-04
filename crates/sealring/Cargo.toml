@@ -1,5 +1,5 @@
 [package]
-name = "oring"
+name = "sealring"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -7,6 +7,16 @@ license.workspace = true
 repository.workspace = true
 readme = "README.md"
 description = "generic sealed-note envelope: seal, open, batch trial-decryption"
+include = [
+    "src/**/*.rs",
+    "benches/**/*.rs",
+    "examples/**/*.rs",
+    "tests/**/*.rs",
+    "tests/golden/*.hex",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
 [dependencies]
 rand_core = { version = "0.10", default-features = false }

@@ -1,14 +1,14 @@
 #![cfg(feature = "test-helpers")]
 
-use oring::{
+use rand_chacha::ChaCha20Rng;
+use rand_core::SeedableRng;
+use sealring::{
     seal,
     test_util::{
         MockKem,
         TestDomain,
     },
 };
-use rand_chacha::ChaCha20Rng;
-use rand_core::SeedableRng;
 
 /// Note bytes shared by every adapter's golden vector.
 const NOTE: [u8; 4] = [1, 2, 3, 4];
@@ -49,13 +49,13 @@ mod golden_k256 {
         SecretKey,
         elliptic_curve::Generate,
     };
-    use oring::{
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
+    use sealring::{
         K256,
         seal,
         test_util::TestDomain,
     };
-    use rand_chacha::ChaCha20Rng;
-    use rand_core::SeedableRng;
 
     use super::{
         AAD,
@@ -79,13 +79,13 @@ mod golden_k256 {
 
 #[cfg(feature = "x25519")]
 mod golden_x25519 {
-    use oring::{
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
+    use sealring::{
         X25519,
         seal,
         test_util::TestDomain,
     };
-    use rand_chacha::ChaCha20Rng;
-    use rand_core::SeedableRng;
     use x25519_dalek::{
         PublicKey,
         StaticSecret,
@@ -122,15 +122,15 @@ mod golden_grumpkin {
         Affine,
         Fr,
     };
-    use oring::{
-        Grumpkin,
-        seal,
-        test_util::TestDomain,
-    };
     use rand_chacha::ChaCha20Rng;
     use rand_core::{
         CryptoRng,
         SeedableRng,
+    };
+    use sealring::{
+        Grumpkin,
+        seal,
+        test_util::TestDomain,
     };
 
     use super::{
@@ -162,7 +162,7 @@ mod golden_grumpkin {
 
 /// Prints the current suite v1 wire-format hex for every adapter enabled in
 /// this build. Run with the target adapter's feature on, for example
-/// `cargo nextest run -p oring --features k256,test-helpers,std --
+/// `cargo nextest run -p sealring --features k256,test-helpers,std --
 /// --ignored golden_regen`, and paste the printed hex into
 /// `tests/golden/<adapter>.hex`.
 #[test]
@@ -180,7 +180,7 @@ fn golden_regen() {
             SecretKey,
             elliptic_curve::Generate,
         };
-        use oring::K256;
+        use sealring::K256;
 
         let mut rng = ChaCha20Rng::seed_from_u64(100);
         let sk = SecretKey::generate_from_rng(&mut rng);
@@ -192,7 +192,7 @@ fn golden_regen() {
 
     #[cfg(feature = "x25519")]
     {
-        use oring::X25519;
+        use sealring::X25519;
         use x25519_dalek::{
             PublicKey,
             StaticSecret,
@@ -217,8 +217,8 @@ fn golden_regen() {
             Affine,
             Fr,
         };
-        use oring::Grumpkin;
         use rand_core::Rng;
+        use sealring::Grumpkin;
 
         let mut rng = ChaCha20Rng::seed_from_u64(300);
         let mut sk_bytes = [0u8; 64];

@@ -14,7 +14,9 @@ use criterion::{
     criterion_group,
     criterion_main,
 };
-use oring::{
+use rand_chacha::ChaCha20Rng;
+use rand_core::SeedableRng;
+use sealring::{
     Grumpkin,
     K256,
     Kem,
@@ -23,8 +25,6 @@ use oring::{
     open,
     test_util::TestDomain,
 };
-use rand_chacha::ChaCha20Rng;
-use rand_core::SeedableRng;
 
 mod common;
 use common::{
@@ -50,7 +50,7 @@ where
         build_envelopes::<K, TestDomain>(me.public_key(), PROBE_COUNT, 0.0, NOTE_LEN);
     let epks: Vec<&[u8]> = envelopes.iter().map(|envelope| envelope.epk()).collect();
 
-    let mut group = c.benchmark_group(format!("oring::micro/adapter={adapter}"));
+    let mut group = c.benchmark_group(format!("sealring::micro/adapter={adapter}"));
     group.throughput(Throughput::Elements(PROBE_COUNT as u64));
 
     group.bench_function("op=decap", |b| {

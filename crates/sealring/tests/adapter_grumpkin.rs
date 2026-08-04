@@ -11,7 +11,12 @@ use ark_grumpkin::{
     Fr,
 };
 use ark_serialize::CanonicalSerialize;
-use oring::{
+use rand_chacha::ChaCha20Rng;
+use rand_core::{
+    CryptoRng,
+    SeedableRng,
+};
+use sealring::{
     Grumpkin,
     Kem,
     Recipient,
@@ -24,11 +29,6 @@ use oring::{
         conformance_low_order_fails,
         conformance_roundtrip,
     },
-};
-use rand_chacha::ChaCha20Rng;
-use rand_core::{
-    CryptoRng,
-    SeedableRng,
 };
 
 /// Draws a Grumpkin keypair the same way the adapter draws an ephemeral

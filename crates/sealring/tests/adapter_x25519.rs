@@ -1,6 +1,8 @@
 #![cfg(all(feature = "x25519", feature = "test-helpers"))]
 
-use oring::{
+use rand_chacha::ChaCha20Rng;
+use rand_core::SeedableRng;
+use sealring::{
     Recipient,
     X25519,
     open,
@@ -13,8 +15,6 @@ use oring::{
         conformance_roundtrip,
     },
 };
-use rand_chacha::ChaCha20Rng;
-use rand_core::SeedableRng;
 use x25519_dalek::{
     PublicKey,
     StaticSecret,

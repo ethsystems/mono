@@ -1,6 +1,12 @@
 #![cfg(feature = "test-helpers")]
 
-use oring::{
+use proptest::prelude::*;
+use rand_chacha::ChaCha20Rng;
+use rand_core::{
+    Rng,
+    SeedableRng,
+};
+use sealring::{
     Recipient,
     SealedNote,
     open,
@@ -9,12 +15,6 @@ use oring::{
         MockKem,
         TestDomain,
     },
-};
-use proptest::prelude::*;
-use rand_chacha::ChaCha20Rng;
-use rand_core::{
-    Rng,
-    SeedableRng,
 };
 
 proptest! {
@@ -89,7 +89,10 @@ mod k256_roundtrip {
         SecretKey,
         elliptic_curve::Generate,
     };
-    use oring::{
+    use proptest::prelude::*;
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
+    use sealring::{
         K256,
         Recipient,
         SealedNote,
@@ -97,9 +100,6 @@ mod k256_roundtrip {
         seal,
         test_util::TestDomain,
     };
-    use proptest::prelude::*;
-    use rand_chacha::ChaCha20Rng;
-    use rand_core::SeedableRng;
 
     proptest! {
         #[test]
@@ -160,7 +160,10 @@ mod k256_roundtrip {
 
 #[cfg(feature = "x25519")]
 mod x25519_roundtrip {
-    use oring::{
+    use proptest::prelude::*;
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
+    use sealring::{
         Recipient,
         SealedNote,
         X25519,
@@ -168,9 +171,6 @@ mod x25519_roundtrip {
         seal,
         test_util::TestDomain,
     };
-    use proptest::prelude::*;
-    use rand_chacha::ChaCha20Rng;
-    use rand_core::SeedableRng;
     use x25519_dalek::StaticSecret;
 
     proptest! {
@@ -237,19 +237,19 @@ mod x25519_roundtrip {
 mod grumpkin_roundtrip {
     use ark_ff::PrimeField;
     use ark_grumpkin::Fr;
-    use oring::{
+    use proptest::prelude::*;
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::{
+        CryptoRng,
+        SeedableRng,
+    };
+    use sealring::{
         Grumpkin,
         Recipient,
         SealedNote,
         open,
         seal,
         test_util::TestDomain,
-    };
-    use proptest::prelude::*;
-    use rand_chacha::ChaCha20Rng;
-    use rand_core::{
-        CryptoRng,
-        SeedableRng,
     };
 
     /// Draws a scalar the way the adapter draws its ephemeral scalar: bytes
