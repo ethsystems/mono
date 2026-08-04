@@ -268,6 +268,12 @@ jobs:
 
       # cargo leaves the uploaded archive on disk. Its digest is the claim the
       # attest job checks the registry against.
+      #
+      # `cargo publish` writes to target/package/tmp-crate/, `cargo package`
+      # writes to target/package/. Both produce identical bytes, but the
+      # tmp-crate path is a cargo implementation detail, so try both and fail
+      # loudly rather than guess. The attest job compares whatever we pick
+      # against the registry checksum, so a wrong file cannot pass silently.
       - name: Record the published digest
         id: digest
         shell: bash
@@ -276,9 +282,22 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
           set -euo pipefail
-          sha256=$(sha256sum "target/package/$CRATE-$VERSION.crate" | cut -d' ' -f1)
+          archive=""
+          for candidate in \
+            "target/package/tmp-crate/$CRATE-$VERSION.crate" \
+            "target/package/$CRATE-$VERSION.crate"; do
+            if [[ -f "$candidate" ]]; then archive="$candidate"; break; fi
+          done
+
+          if [[ -z "$archive" ]]; then
+            echo "::error::no packaged archive found for $CRATE $VERSION"
+            find target/package -name '*.crate' -print 2>/dev/null || true
+            exit 1
+          fi
+
+          sha256=$(sha256sum "$archive" | cut -d' ' -f1)
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
-          echo "published sha256: $sha256"
+          echo "published sha256: $sha256 ($archive)"
 
   attest:
     name: Attest provenance
