@@ -12,8 +12,13 @@ use std::{
         Mutex,
         MutexGuard,
         atomic::{
+            AtomicBool,
             AtomicUsize,
-            Ordering::Relaxed,
+            Ordering::{
+                Acquire,
+                Relaxed,
+                Release,
+            },
         },
     },
 };
@@ -30,12 +35,17 @@ use sealring::{
 };
 
 static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+static ANCHOR: AtomicUsize = AtomicUsize::new(0);
+const STACK_WINDOW: usize = 64 * 1024;
 
 struct Counting;
 
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        ALLOCATIONS.fetch_add(1, Relaxed);
+        let here = &layout as *const Layout as usize;
+        if ANCHOR.load(Relaxed).wrapping_sub(here) < STACK_WINDOW {
+            ALLOCATIONS.fetch_add(1, Relaxed);
+        }
         unsafe { System.alloc(layout) }
     }
 
