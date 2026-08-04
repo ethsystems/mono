@@ -1,6 +1,6 @@
 #![cfg(feature = "test-helpers")]
 
-use oring::{
+use sealring::{
     seal,
     test_util::{
         MockKem,
@@ -49,7 +49,7 @@ mod golden_k256 {
         SecretKey,
         elliptic_curve::Generate,
     };
-    use oring::{
+    use sealring::{
         K256,
         seal,
         test_util::TestDomain,
@@ -79,7 +79,7 @@ mod golden_k256 {
 
 #[cfg(feature = "x25519")]
 mod golden_x25519 {
-    use oring::{
+    use sealring::{
         X25519,
         seal,
         test_util::TestDomain,
@@ -122,7 +122,7 @@ mod golden_grumpkin {
         Affine,
         Fr,
     };
-    use oring::{
+    use sealring::{
         Grumpkin,
         seal,
         test_util::TestDomain,
@@ -162,7 +162,7 @@ mod golden_grumpkin {
 
 /// Prints the current suite v1 wire-format hex for every adapter enabled in
 /// this build. Run with the target adapter's feature on, for example
-/// `cargo nextest run -p oring --features k256,test-helpers,std --
+/// `cargo nextest run -p sealring --features k256,test-helpers,std --
 /// --ignored golden_regen`, and paste the printed hex into
 /// `tests/golden/<adapter>.hex`.
 #[test]
@@ -180,7 +180,7 @@ fn golden_regen() {
             SecretKey,
             elliptic_curve::Generate,
         };
-        use oring::K256;
+        use sealring::K256;
 
         let mut rng = ChaCha20Rng::seed_from_u64(100);
         let sk = SecretKey::generate_from_rng(&mut rng);
@@ -192,7 +192,7 @@ fn golden_regen() {
 
     #[cfg(feature = "x25519")]
     {
-        use oring::X25519;
+        use sealring::X25519;
         use x25519_dalek::{
             PublicKey,
             StaticSecret,
@@ -217,7 +217,7 @@ fn golden_regen() {
             Affine,
             Fr,
         };
-        use oring::Grumpkin;
+        use sealring::Grumpkin;
         use rand_core::Rng;
 
         let mut rng = ChaCha20Rng::seed_from_u64(300);

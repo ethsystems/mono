@@ -8,7 +8,7 @@
 use ark_ff::PrimeField;
 use ark_grumpkin::Fr;
 use k256::elliptic_curve::Generate;
-use oring::{
+use sealring::{
     Grumpkin,
     K256,
     Kem,

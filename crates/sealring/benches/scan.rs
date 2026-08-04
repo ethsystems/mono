@@ -6,7 +6,7 @@ use criterion::{
     criterion_group,
     criterion_main,
 };
-use oring::{
+use sealring::{
     Grumpkin,
     K256,
     Kem,
@@ -58,7 +58,7 @@ where
     K::SecretKey: Sync,
 {
     for n in counts.iter().copied() {
-        let mut group = c.benchmark_group(format!("oring::scan/adapter={adapter} n={n}"));
+        let mut group = c.benchmark_group(format!("sealring::scan/adapter={adapter} n={n}"));
         group.throughput(Throughput::Elements(n as u64));
 
         for hit_rate in HIT_RATES {
@@ -142,7 +142,7 @@ fn bench_scan_grumpkin(c: &mut Criterion) {
 fn bench_scan_note_len(c: &mut Criterion) {
     for note_len in NOTE_LENS {
         let mut group = c.benchmark_group(format!(
-            "oring::scan/adapter=x25519 n={NOTE_LEN_COUNT} note_len={note_len}"
+            "sealring::scan/adapter=x25519 n={NOTE_LEN_COUNT} note_len={note_len}"
         ));
         group.throughput(Throughput::Elements(NOTE_LEN_COUNT as u64));
 

@@ -7,6 +7,15 @@ rust-version.workspace = true
 repository.workspace = true
 readme = "README.md"
 description = "rotortree: a fast n-ary leanIMT implementation with persistence"
+include = [
+    "src/**/*.rs",
+    "benches/**/*.rs",
+    "examples/**/*.rs",
+    "tests/**/*.rs",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
 [features]
 default = ["blake3"]

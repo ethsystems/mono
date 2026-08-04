@@ -1,12 +1,12 @@
 //! Seals a note to an X25519 recipient, then opens it, then scans a batch
 //! that includes the sealed note among strangers' envelopes.
 //!
-//! Run with `cargo run -p oring --example seal_open --features x25519`.
+//! Run with `cargo run -p sealring --example seal_open --features x25519`.
 
 fn main() {
     use std::convert::Infallible;
 
-    use oring::{
+    use sealring::{
         Domain,
         Recipient,
         Scanner,
@@ -29,7 +29,7 @@ fn main() {
         type Error = Infallible;
         type Note = Vec<u8>;
 
-        const DOMAIN_TAG: &'static str = "oring-example/v1";
+        const DOMAIN_TAG: &'static str = "sealring-example/v1";
 
         fn encode_note(note: &Self::Note, out: &mut Vec<u8>) -> Result<(), Self::Error> {
             out.extend_from_slice(note);

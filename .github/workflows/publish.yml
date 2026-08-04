@@ -1,0 +1,349 @@
+name: Publish
+
+# Release a single workspace crate to crates.io.
+#
+# Trigger: push an annotated, signed tag named <crate>-v<semver>
+#
+# Authentication uses crates.io Trusted Publishing.
+
+on:
+  push:
+    tags:
+      - '*-v[0-9]+.[0-9]+.[0-9]+*'
+
+# No ambient permissions. Each job asks for exactly what it needs.
+permissions: {}
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Verify tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      crate: ${{ steps.tag.outputs.crate }}
+      version: ${{ steps.tag.outputs.version }}
+      sha: ${{ steps.tag.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history so the tag can be checked for reachability from main.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install --profile minimal --no-self-update "$channel"
+
+      - name: Parse and validate tag
+        id: tag
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$TAG" =~ ^([a-z0-9]([a-z0-9_-]*[a-z0-9])?)-v([0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?)$ ]]; then
+            echo "::error::tag '$TAG' is not <crate>-v<semver>"
+            exit 1
+          fi
+          crate="${BASH_REMATCH[1]}"
+          version="${BASH_REMATCH[3]}"
+
+          manifest="crates/$crate/Cargo.toml"
+          if [[ ! -f "$manifest" ]]; then
+            echo "::error::tag names crate '$crate' but $manifest does not exist"
+            exit 1
+          fi
+
+          # cargo metadata resolves workspace inheritance, so this stays correct
+          # if the crate later switches to version.workspace = true.
+          declared=$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r --arg n "$crate" '.packages[] | select(.name == $n) | .version')
+          if [[ "$declared" != "$version" ]]; then
+            echo "::error::tag says $version but $manifest declares $declared"
+            exit 1
+          fi
+
+          # The tag must be annotated. A lightweight tag carries no author and
+          # cannot be signed.
+          if [[ "$(git cat-file -t "$TAG")" != "tag" ]]; then
+            echo "::error::'$TAG' is a lightweight tag; release tags must be annotated and signed"
+            exit 1
+          fi
+
+          if ! git cat-file tag "$TAG" | grep -qE '^-----BEGIN (PGP|SSH) SIGNATURE-----'; then
+            echo "::error::'$TAG' carries no signature"
+            exit 1
+          fi
+
+          # Full key verification when an allowed-signers file is committed.
+          # Without it the check above proves only that some key signed the tag.
+          if [[ -f .github/allowed_signers ]]; then
+            git -c gpg.ssh.allowedSignersFile=.github/allowed_signers verify-tag "$TAG"
+          else
+            echo "::warning::.github/allowed_signers is absent; signature is present but the key is unverified"
+          fi
+
+          sha=$(git rev-parse "$TAG^{commit}")
+          if [[ "$sha" != "$EVENT_SHA" ]]; then
+            echo "::error::tag resolves to $sha but the event carried $EVENT_SHA"
+            exit 1
+          fi
+
+          # Release only reviewed code. A tag on an unmerged branch is rejected.
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::$sha is not an ancestor of origin/main"
+            exit 1
+          fi
+
+          {
+            echo "crate=$crate"
+            echo "version=$version"
+            echo "sha=$sha"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "verified $crate $version at $sha"
+
+  gate:
+    name: Gate (${{ needs.verify.outputs.crate }})
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Pinned to the SHA job 1 verified, not to the tag. If the tag moves
+      # between jobs, this still builds and inspects the reviewed commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+
+      - name: Install pinned toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install --profile minimal --no-self-update \
+            --component clippy "$channel"
+
+      # This action lives outside the privileged job on purpose. It fetches
+      # prebuilt binaries, so it never runs where an OIDC token is reachable.
+      - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # v2
+        with:
+          tool: cargo-hack,cargo-nextest,cargo-audit,cargo-semver-checks
+
+      - name: Clippy powerset
+        shell: bash
+        env:
+          CRATE: ${{ needs.verify.outputs.crate }}
+        run: |
+          set -euo pipefail
+          flags=$(python3 .github/scripts/hack-flags.py "crates/$CRATE")
+          # unquoted: the translator emits several arguments
+          cargo hack clippy -p "$CRATE" --locked $flags -- -D warnings
+
+      - name: Test powerset
+        shell: bash
+        env:
+          CRATE: ${{ needs.verify.outputs.crate }}
+        run: |
+          set -euo pipefail
+          flags=$(python3 .github/scripts/hack-flags.py "crates/$CRATE")
+          # unquoted: the translator emits several arguments
+          cargo hack nextest run -p "$CRATE" --locked $flags --no-tests=pass
+
+      - name: Audit dependencies
+        run: cargo audit --deny warnings
+
+      - name: Check semver against the published baseline
+        shell: bash
+        env:
+          CRATE: ${{ needs.verify.outputs.crate }}
+        run: |
+          set -euo pipefail
+          # No baseline exists for a first release, so the check is skipped.
+          if curl -sfL -H 'User-Agent: ethsystems-mono-release-ci' \
+              -o /dev/null "https://crates.io/api/v1/crates/$CRATE"; then
+            cargo semver-checks --package "$CRATE"
+          else
+            echo "$CRATE is not on crates.io yet; skipping semver baseline check"
+          fi
+
+      # Builds the .crate exactly as `cargo publish` would, including the
+      # verification compile of the packaged sources.
+      - name: Package
+        shell: bash
+        env:
+          CRATE: ${{ needs.verify.outputs.crate }}
+        run: cargo package --locked -p "$CRATE"
+
+      - name: Review package contents
+        shell: bash
+        env:
+          CRATE: ${{ needs.verify.outputs.crate }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          archive="target/package/$CRATE-$VERSION.crate"
+          files=$(tar -tzf "$archive" | sed "s|^$CRATE-$VERSION/||" | grep -v '/$' | sort)
+
+          echo "::group::files in $archive"
+          echo "$files"
+          echo "::endgroup::"
+
+          # Anything matching these never belongs in a published crate.
+          if bad=$(echo "$files" | grep -Ei \
+              '(^|/)(\.env.*|\.git/.*|\.netrc|.*\.pem|.*\.p12|.*\.pfx|.*\.key|id_(rsa|dsa|ecdsa|ed25519).*|.*credentials.*|.*\.crt)$'); then
+            echo "::error::package contains files that look like secrets:"
+            echo "$bad"
+            exit 1
+          fi
+
+          # A build script runs on every downstream machine that compiles this
+          # crate. Surface it in the log so the approver reads it before
+          # approving the deployment.
+          if echo "$files" | grep -qx 'build.rs'; then
+            echo "::warning::this crate ships a build.rs; review it below"
+            echo "::group::build.rs"
+            tar -xzOf "$archive" "$CRATE-$VERSION/build.rs"
+            echo "::endgroup::"
+          fi
+
+          for required in Cargo.toml README.md; do
+            echo "$files" | grep -qx "$required" \
+              || { echo "::error::package is missing $required"; exit 1; }
+          done
+
+  publish:
+    name: Publish ${{ needs.verify.outputs.crate }} v${{ needs.verify.outputs.version }}
+    needs: [verify, gate]
+    runs-on: ubuntu-latest
+    # Required reviewers on this environment mean a tag push alone cannot
+    # release. Name it in the crates.io Trusted Publisher config so an OIDC
+    # token minted by any other job is rejected by crates.io.
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/${{ needs.verify.outputs.crate }}
+    permissions:
+      contents: read
+      # The only place in this repository that mints a crates.io token.
+      id-token: write
+    outputs:
+      sha256: ${{ steps.digest.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+
+      - name: Install pinned toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install --profile minimal --no-self-update "$channel"
+
+      - name: Mint a short-lived crates.io token
+        id: auth
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+
+      - name: cargo publish
+        shell: bash
+        env:
+          CRATE: ${{ needs.verify.outputs.crate }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --locked -p "$CRATE"
+
+      # cargo leaves the uploaded archive on disk. Its digest is the claim the
+      # attest job checks the registry against.
+      - name: Record the published digest
+        id: digest
+        shell: bash
+        env:
+          CRATE: ${{ needs.verify.outputs.crate }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          sha256=$(sha256sum "target/package/$CRATE-$VERSION.crate" | cut -d' ' -f1)
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "published sha256: $sha256"
+
+  attest:
+    name: Attest provenance
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Fetch the published archive and confirm it is what we built
+        shell: bash
+        env:
+          CRATE: ${{ needs.verify.outputs.crate }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          EXPECTED: ${{ needs.publish.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          # Sparse index path layout: 1/, 2/, 3/x/, then xx/yy/.
+          name=$(printf '%s' "$CRATE" | tr '[:upper:]' '[:lower:]')
+          case ${#name} in
+            1) idx="1/$name" ;;
+            2) idx="2/$name" ;;
+            3) idx="3/${name:0:1}/$name" ;;
+            *) idx="${name:0:2}/${name:2:2}/$name" ;;
+          esac
+
+          # The index lags the upload by seconds. Poll rather than assume.
+          cksum=""
+          for _ in $(seq 1 30); do
+            line=$(curl -sfL -H 'User-Agent: ethsystems-mono-release-ci' \
+              "https://index.crates.io/$idx" || true)
+            cksum=$(jq -r --arg v "$VERSION" \
+              'select(.vers == $v) | .cksum' <<< "$line" 2>/dev/null | head -n1 || true)
+            if [[ -n "$cksum" ]]; then break; fi
+            sleep 10
+          done
+          if [[ -z "$cksum" ]]; then
+            echo "::error::$CRATE $VERSION did not appear in the sparse index"
+            exit 1
+          fi
+
+          if [[ "$cksum" != "$EXPECTED" ]]; then
+            echo "::error::registry checksum $cksum does not match the archive we built ($EXPECTED)"
+            exit 1
+          fi
+
+          curl -sfL -H 'User-Agent: ethsystems-mono-release-ci' \
+            -o "dist/$CRATE-$VERSION.crate" \
+            "https://static.crates.io/crates/$name/$name-$VERSION.crate"
+
+          served=$(sha256sum "dist/$CRATE-$VERSION.crate" | cut -d' ' -f1)
+          if [[ "$served" != "$EXPECTED" ]]; then
+            echo "::error::static.crates.io served $served, expected $EXPECTED"
+            exit 1
+          fi
+
+          echo "registry, CDN, and build all agree on $EXPECTED"
+
+      # Signs a SLSA v1 provenance statement over the archive, binding it to
+      # this repository, this workflow, and this commit. Recorded in the public
+      # Rekor transparency log. crates.io does not check it; consumers verify
+      # with `gh attestation verify`. See SECURITY.md.
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: dist/*.crate

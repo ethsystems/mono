@@ -1,6 +1,6 @@
 #![cfg(feature = "test-helpers")]
 
-use oring::{
+use sealring::{
     Recipient,
     SealedNote,
     open,
@@ -89,7 +89,7 @@ mod k256_roundtrip {
         SecretKey,
         elliptic_curve::Generate,
     };
-    use oring::{
+    use sealring::{
         K256,
         Recipient,
         SealedNote,
@@ -160,7 +160,7 @@ mod k256_roundtrip {
 
 #[cfg(feature = "x25519")]
 mod x25519_roundtrip {
-    use oring::{
+    use sealring::{
         Recipient,
         SealedNote,
         X25519,
@@ -237,7 +237,7 @@ mod x25519_roundtrip {
 mod grumpkin_roundtrip {
     use ark_ff::PrimeField;
     use ark_grumpkin::Fr;
-    use oring::{
+    use sealring::{
         Grumpkin,
         Recipient,
         SealedNote,

@@ -4,7 +4,7 @@ use k256::{
     SecretKey,
     elliptic_curve::Generate,
 };
-use oring::{
+use sealring::{
     K256,
     Recipient,
     open,

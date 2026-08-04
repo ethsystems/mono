@@ -11,7 +11,7 @@ use ark_grumpkin::{
     Fr,
 };
 use ark_serialize::CanonicalSerialize;
-use oring::{
+use sealring::{
     Grumpkin,
     Kem,
     Recipient,

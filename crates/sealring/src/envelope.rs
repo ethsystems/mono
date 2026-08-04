@@ -239,7 +239,7 @@ unsafe impl<'de, K: Kem, C: wincode::config::Config> wincode::SchemaRead<'de, C>
     ) -> wincode::ReadResult<()> {
         let bytes = <Vec<u8> as wincode::SchemaRead<'de, C>>::get(reader)?;
         let note = Self::parse(bytes)
-            .map_err(|_| wincode::ReadError::Custom("invalid oring envelope"))?;
+            .map_err(|_| wincode::ReadError::Custom("invalid sealring envelope"))?;
         dst.write(note);
         Ok(())
     }

@@ -1,10 +1,10 @@
-# oring
+# sealring
 
 A generic sealed-note envelope: seal a note to a recipient public key, open it with the recipient secret key, and batch trial-decrypt a mixed inbox for wallet scanning.
 
 <!-- ANCHOR: intro -->
 
-`oring` (an O-ring is a mechanical seal) packages note-encryption architecture that shielded-pool and stealth-address PoCs keep reimplementing: secp256k1 or X25519 ECDH, HKDF-SHA256, ChaCha20-Poly1305. 
+`sealring` (a sealing ring is a mechanical seal) packages note-encryption architecture that shielded-pool and stealth-address PoCs keep reimplementing: secp256k1 or X25519 ECDH, HKDF-SHA256, ChaCha20-Poly1305. 
 
 ### how it works
 
@@ -42,7 +42,7 @@ The crate owns one fixed, hardened protocol flow (suite v1: HKDF-SHA256 plus Cha
 
 ## rationale
 
-every PoC that needs this envelope rebuilds it: ECDH to a fresh key, a KDF, an AEAD. What a rewrite drops is the part that matters. `pk_r` left out of the KDF info, no key commitment, a nonce picked by hand, secrets left in freed buffers. `oring` fixes that flow once and lets a consumer vary only the curve and the note codec.
+every PoC that needs this envelope rebuilds it: ECDH to a fresh key, a KDF, an AEAD. What a rewrite drops is the part that matters. `pk_r` left out of the KDF info, no key commitment, a nonce picked by hand, secrets left in freed buffers. `sealring` fixes that flow once and lets a consumer vary only the curve and the note codec.
 
 The scan loop is the other half. The obvious version is `for e in inbox { open(&me, e, aad) }`: one decapsulation per envelope, and on k256 one field inversion per envelope to bring the shared point back to affine. `Scanner::scan` runs fixed 64-envelope chunks through `Kem::decap_batch`, where k256 spends one `batch_normalize` per chunk, and reuses one scratch buffer for the whole scan; `scan_parallel` puts whole chunks on rayon. Measured at 1024 envelopes, 1% hit rate, 48-byte notes, 14 cores:
 
@@ -51,7 +51,7 @@ The scan loop is the other half. The obvious version is `for e in inbox { open(&
 | x25519 | 20.0 ms | 20.2 ms | 2.22 ms |
 | k256 | 22.6 ms | 21.2 ms | 2.40 ms |
 
-Batching alone is worth about 6% on k256 and nothing on x25519, which has no inversion to amortize; the parallel path is the ~9x. Reproduce with `cargo bench -p oring --bench scan`.
+Batching alone is worth about 6% on k256 and nothing on x25519, which has no inversion to amortize; the parallel path is the ~9x. Reproduce with `cargo bench -p sealring --bench scan`.
 
 ## Design decisions
 
@@ -73,7 +73,7 @@ Batching alone is worth about 6% on k256 and nothing on x25519, which has no inv
 ```rust,ignore
 use std::convert::Infallible;
 
-use oring::{Domain, Recipient, open, seal};
+use sealring::{Domain, Recipient, open, seal};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 use x25519_dalek::StaticSecret;
@@ -85,7 +85,7 @@ impl Domain for WalletDomain {
     // this codec accepts every note; a domain with a real format names its
     // own rejection type here.
     type Error = Infallible;
-    const DOMAIN_TAG: &'static str = "oring-example/v1";
+    const DOMAIN_TAG: &'static str = "sealring-example/v1";
 
     fn encode_note(note: &Self::Note, out: &mut Vec<u8>) -> Result<(), Self::Error> {
         out.extend_from_slice(note);
@@ -99,21 +99,21 @@ impl Domain for WalletDomain {
 
 let mut rng = ChaCha20Rng::seed_from_u64(42);
 
-let me = Recipient::<oring::X25519>::new(StaticSecret::random_from_rng(&mut rng));
+let me = Recipient::<sealring::X25519>::new(StaticSecret::random_from_rng(&mut rng));
 
 let note = b"pay alice 5 units".to_vec();
 let aad = b"block-height:1000";
 
 let envelope =
-    seal::<oring::X25519, WalletDomain>(me.public_key(), &note, aad, &mut rng).unwrap();
-let opened = open::<oring::X25519, WalletDomain, _>(&me, &envelope, aad).unwrap();
+    seal::<sealring::X25519, WalletDomain>(me.public_key(), &note, aad, &mut rng).unwrap();
+let opened = open::<sealring::X25519, WalletDomain, _>(&me, &envelope, aad).unwrap();
 assert_eq!(opened, Some(note));
 ```
 
 The snippet above is illustrative; `examples/seal_open.rs` is the compiled version. It runs this end to end and adds `Scanner`, the batch path: instead of calling `open` once per envelope, a wallet builds one `Scanner` from its `Recipient` and scans a whole inbox in fixed-size chunks. A commit mismatch means the envelope was not addressed to this key and is skipped; a commit match with a failure afterward (AEAD, note decoding, `Domain::verify`) means an authenticated envelope that is wrong, and is surfaced as `Err(Malformed)` rather than dropped, because silently dropping an authenticated note can lock funds invisibly.
 
-```
-cargo run -p oring --example seal_open --features x25519
+```sh
+cargo run -p sealring --example seal_open --features x25519
 ```
 
 ### Features
@@ -150,34 +150,34 @@ cargo run -p oring --example seal_open --features x25519
 
 ### Check
 
-```
-cargo hack check -p oring --feature-powerset
+```sh
+cargo hack check -p sealring --feature-powerset
 ```
 
 ### Clippy
 
-```
-cargo hack clippy -p oring --feature-powerset -- -D warnings
+```sh
+cargo hack clippy -p sealring --feature-powerset -- -D warnings
 ```
 
 ### Format
 
-```
-cargo +nightly fmt -p oring
+```sh
+cargo +nightly fmt -p sealring
 ```
 
 ### Testing
 
-```
-cargo hack nextest run -p oring --feature-powerset
+```sh
+cargo hack nextest run -p sealring --feature-powerset
 ```
 
 Golden vectors under `tests/golden/` freeze the wire format per adapter; a mismatch there is a format break, not a flaky test.
 
 ### Benchmarks
 
-```
-cargo bench -p oring -- --list
+```sh
+cargo bench -p sealring -- --list
 ```
 
 `benches/scan.rs` is feature-gated; see the [Cargo.toml entry](Cargo.toml) for the exact flags.

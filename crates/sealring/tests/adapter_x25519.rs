@@ -1,6 +1,6 @@
 #![cfg(all(feature = "x25519", feature = "test-helpers"))]
 
-use oring::{
+use sealring::{
     Recipient,
     X25519,
     open,
