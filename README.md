@@ -13,6 +13,10 @@ Rust 1.95.0 (pinned via [`rust-toolchain.toml`](rust-toolchain.toml)).
 
 See [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy.
 
+## Publishing
+
+See [PUBLISH.md](PUBLISH.md) for how maintainers release a crate.
+
 ## License
 
 Licensed under either of

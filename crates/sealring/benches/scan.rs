@@ -58,7 +58,8 @@ where
     K::SecretKey: Sync,
 {
     for n in counts.iter().copied() {
-        let mut group = c.benchmark_group(format!("sealring::scan/adapter={adapter} n={n}"));
+        let mut group =
+            c.benchmark_group(format!("sealring::scan/adapter={adapter} n={n}"));
         group.throughput(Throughput::Elements(n as u64));
 
         for hit_rate in HIT_RATES {

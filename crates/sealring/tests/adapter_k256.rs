@@ -4,6 +4,8 @@ use k256::{
     SecretKey,
     elliptic_curve::Generate,
 };
+use rand_chacha::ChaCha20Rng;
+use rand_core::SeedableRng;
 use sealring::{
     K256,
     Recipient,
@@ -17,8 +19,6 @@ use sealring::{
         conformance_roundtrip,
     },
 };
-use rand_chacha::ChaCha20Rng;
-use rand_core::SeedableRng;
 
 /// SEC1 encoding of the point at infinity; decap rejects it.
 const IDENTITY_EPK: &[u8] = &[0x00];

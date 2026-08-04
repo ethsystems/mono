@@ -4,6 +4,11 @@
 use ark_ff::PrimeField;
 use ark_grumpkin::Fr;
 use k256::elliptic_curve::Generate;
+use rand_chacha::ChaCha20Rng;
+use rand_core::{
+    Rng,
+    SeedableRng,
+};
 use sealring::{
     Domain,
     Grumpkin,
@@ -13,11 +18,6 @@ use sealring::{
     SealedNote,
     X25519,
     seal,
-};
-use rand_chacha::ChaCha20Rng;
-use rand_core::{
-    Rng,
-    SeedableRng,
 };
 use x25519_dalek::StaticSecret;
 

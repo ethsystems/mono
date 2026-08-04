@@ -343,7 +343,7 @@ jobs:
       # Signs a SLSA v1 provenance statement over the archive, binding it to
       # this repository, this workflow, and this commit. Recorded in the public
       # Rekor transparency log. crates.io does not check it; consumers verify
-      # with `gh attestation verify`. See SECURITY.md.
+      # with `gh attestation verify`. See PUBLISH.md.
       - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/*.crate

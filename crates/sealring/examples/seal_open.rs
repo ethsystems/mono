@@ -6,6 +6,8 @@
 fn main() {
     use std::convert::Infallible;
 
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
     use sealring::{
         Domain,
         Recipient,
@@ -14,8 +16,6 @@ fn main() {
         open,
         seal,
     };
-    use rand_chacha::ChaCha20Rng;
-    use rand_core::SeedableRng;
     use x25519_dalek::{
         PublicKey,
         StaticSecret,

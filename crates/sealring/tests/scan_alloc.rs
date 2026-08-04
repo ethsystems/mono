@@ -18,6 +18,8 @@ use std::{
     },
 };
 
+use rand_chacha::ChaCha20Rng;
+use rand_core::SeedableRng;
 use sealring::{
     Recipient,
     Scanner,
@@ -26,8 +28,6 @@ use sealring::{
         TestDomain,
     },
 };
-use rand_chacha::ChaCha20Rng;
-use rand_core::SeedableRng;
 
 static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
 

@@ -14,6 +14,8 @@ use criterion::{
     criterion_group,
     criterion_main,
 };
+use rand_chacha::ChaCha20Rng;
+use rand_core::SeedableRng;
 use sealring::{
     Grumpkin,
     K256,
@@ -23,8 +25,6 @@ use sealring::{
     open,
     test_util::TestDomain,
 };
-use rand_chacha::ChaCha20Rng;
-use rand_core::SeedableRng;
 
 mod common;
 use common::{

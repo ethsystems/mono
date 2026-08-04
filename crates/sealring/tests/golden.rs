@@ -1,5 +1,7 @@
 #![cfg(feature = "test-helpers")]
 
+use rand_chacha::ChaCha20Rng;
+use rand_core::SeedableRng;
 use sealring::{
     seal,
     test_util::{
@@ -7,8 +9,6 @@ use sealring::{
         TestDomain,
     },
 };
-use rand_chacha::ChaCha20Rng;
-use rand_core::SeedableRng;
 
 /// Note bytes shared by every adapter's golden vector.
 const NOTE: [u8; 4] = [1, 2, 3, 4];
@@ -49,13 +49,13 @@ mod golden_k256 {
         SecretKey,
         elliptic_curve::Generate,
     };
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
     use sealring::{
         K256,
         seal,
         test_util::TestDomain,
     };
-    use rand_chacha::ChaCha20Rng;
-    use rand_core::SeedableRng;
 
     use super::{
         AAD,
@@ -79,13 +79,13 @@ mod golden_k256 {
 
 #[cfg(feature = "x25519")]
 mod golden_x25519 {
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
     use sealring::{
         X25519,
         seal,
         test_util::TestDomain,
     };
-    use rand_chacha::ChaCha20Rng;
-    use rand_core::SeedableRng;
     use x25519_dalek::{
         PublicKey,
         StaticSecret,
@@ -122,15 +122,15 @@ mod golden_grumpkin {
         Affine,
         Fr,
     };
-    use sealring::{
-        Grumpkin,
-        seal,
-        test_util::TestDomain,
-    };
     use rand_chacha::ChaCha20Rng;
     use rand_core::{
         CryptoRng,
         SeedableRng,
+    };
+    use sealring::{
+        Grumpkin,
+        seal,
+        test_util::TestDomain,
     };
 
     use super::{
@@ -217,8 +217,8 @@ fn golden_regen() {
             Affine,
             Fr,
         };
-        use sealring::Grumpkin;
         use rand_core::Rng;
+        use sealring::Grumpkin;
 
         let mut rng = ChaCha20Rng::seed_from_u64(300);
         let mut sk_bytes = [0u8; 64];
