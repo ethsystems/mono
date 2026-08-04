@@ -37,21 +37,21 @@ serde = ["dep:serde", "dep:serde_with"]
 # surface, so a minor bump could silently change it. The byte-identity unit
 # test guards behavior; this pin guards the API.
 blake3 = { version = "=1.8.5", default-features = false, optional = true }
-wincode = { version = "0.4", default-features = false, features = ["alloc", "derive"], optional = true }
+wincode = { workspace = true, features = ["alloc", "derive"], optional = true }
 parking_lot = { version = "0.12", optional = true }
 arc-swap = { version = "1", optional = true }
-rayon = { version = "1", optional = true }
+rayon = { workspace = true, optional = true }
 crc-fast = { version = "1.10", default-features = false, optional = true }
 fs4 = { version = "0.13", optional = true, features = ["sync"] }
 memmap2 = { version = "0.9", optional = true }
-include-utils = { version = "0.2.4", optional = true }
-serde = { version = "1", default-features = false, optional = true, features = ["derive"] }
+include-utils = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
 serde_with = { version = "3.17", default-features = false, optional = true }
 
 [dev-dependencies]
-proptest = "1"
-criterion = { version = "0.8", features = ["html_reports"] }
-crabtime = "1.1.4"
+proptest = { workspace = true, features = ["std", "fork", "timeout", "bit-set"] }
+criterion = { workspace = true, features = ["rayon", "plotters", "cargo_bench_support", "html_reports"] }
+crabtime = { workspace = true, features = ["std"] }
 tempfile = "3"
 tikv-jemallocator = "0.7"
 rotortree = { path = ".", features = ["test-helpers"] }
