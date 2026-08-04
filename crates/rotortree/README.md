@@ -22,7 +22,7 @@ The tree design is inspired by [lean-imt](https://zkkit.org/leanimt-paper.pdf), 
 - wal for persistence and recovery, with checkpointing to prevent unbounded wal growth
 - [wincode](https://github.com/anza-xyz/wincode) & regular serde for compatibility with ecosystem (e.g the jolt prover needs serde)
 - no_std by default, persistence requires std
-- benchmarks driven and configured by divan + crabtime
+- benchmarks driven and configured by criterion + crabtime
 - by default your tree lives in memory, but with the `storage` feature you can tier cold levels to mmap'd data files via `TieringConfig::pin_above_level`
   - with N=4, MAX_DEPTH=16, you can fit ~4.3B nullifiers in 41 GiB
   - with N=8, MAX_DEPTH=10, you can fit ~1B nullifiers in 37 GiB

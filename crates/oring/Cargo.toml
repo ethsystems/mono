@@ -1,0 +1,79 @@
+[package]
+name = "oring"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "generic sealed-note envelope: seal, open, batch trial-decryption"
+
+[dependencies]
+rand_core = { version = "0.10", default-features = false }
+zeroize = { version = "1.8", default-features = false }
+subtle = { version = "2.6", default-features = false }
+hkdf = { version = "0.13", default-features = false }
+sha2 = { version = "0.11", default-features = false }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "zeroize"] }
+k256 = { version = "0.14", default-features = false, features = ["ecdh", "arithmetic", "alloc"], optional = true }
+x25519-dalek = { version = "3.0", default-features = false, features = ["static_secrets", "zeroize", "precomputed-tables"], optional = true }
+ark-grumpkin = { version = "0.6", default-features = false, optional = true }
+ark-ec = { version = "0.6", default-features = false, optional = true }
+ark-ff = { version = "0.6", default-features = false, optional = true }
+ark-serialize = { version = "0.6", default-features = false, optional = true }
+rayon = { version = "1.10", optional = true }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"], optional = true }
+include-utils = { version = "0.2.4", optional = true }
+wincode = { version = "0.6", default-features = false, features = ["alloc", "derive"], optional = true }
+
+[dev-dependencies]
+proptest = "1"
+crabtime = "1.1.4"
+criterion = { version = "0.8", features = ["html_reports"] }
+rand_chacha = "0.10"
+
+[features]
+default = []
+std = [
+    "zeroize/std",
+    "subtle/std",
+    "serde?/std",
+    "wincode?/std",
+    "k256?/std",
+    "k256?/precomputed-tables",
+    "ark-grumpkin?/std",
+    "ark-ec?/std",
+    "ark-ff?/std",
+    "ark-serialize?/std",
+]
+k256 = ["dep:k256"]
+x25519 = ["dep:x25519-dalek"]
+grumpkin = ["dep:ark-grumpkin", "dep:ark-ec", "dep:ark-ff", "dep:ark-serialize"]
+parallel = ["std", "dep:rayon"]
+serde = ["dep:serde"]
+wincode = ["dep:wincode"]
+test-helpers = []
+docs = ["dep:include-utils"]
+
+[[bench]]
+name = "scan"
+harness = false
+required-features = ["x25519", "k256", "grumpkin", "test-helpers", "std"]
+
+[[bench]]
+name = "seal"
+harness = false
+required-features = ["x25519", "k256", "grumpkin", "test-helpers", "std"]
+
+[[bench]]
+name = "micro"
+harness = false
+required-features = ["x25519", "k256", "grumpkin", "test-helpers", "std"]
+
+[[example]]
+name = "seal_open"
+required-features = ["x25519"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

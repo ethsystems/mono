@@ -8,8 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # depth-2: pairwise powerset (~n^2/2) instead of 2^n
-  HACK_POWERSET_FLAGS: --feature-powerset --depth 2
 
 jobs:
   fmt:
@@ -22,9 +20,32 @@ jobs:
           components: rustfmt
       - run: cargo +nightly fmt --all --check
 
-  clippy:
-    name: Clippy
+  # Each crate gets its own powerset, configured by its hack.toml. A crate
+  # without one falls back to the default pairwise powerset.
+  discover:
+    name: Discover crates
     runs-on: ubuntu-latest
+    outputs:
+      crates: ${{ steps.list.outputs.crates }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        shell: bash
+        run: |
+          set -euo pipefail
+          crates=$(ls -d crates/*/ | xargs -n1 basename | sort \
+            | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "crates=$crates" >> "$GITHUB_OUTPUT"
+          echo "discovered: $crates"
+
+  clippy:
+    name: Clippy (${{ matrix.crate }})
+    runs-on: ubuntu-latest
+    needs: discover
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: ${{ fromJson(needs.discover.outputs.crates) }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.95.0
@@ -34,15 +55,25 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      - run: cargo hack clippy --workspace ${{ env.HACK_POWERSET_FLAGS }} -- -D warnings
+      - name: Clippy powerset
+        shell: bash
+        env:
+          CRATE: ${{ matrix.crate }}
+        run: |
+          set -euo pipefail
+          flags=$(python3 .github/scripts/hack-flags.py "crates/$CRATE")
+          echo "hack flags: $flags"
+          # unquoted: the translator emits several arguments
+          cargo hack clippy -p "$CRATE" $flags -- -D warnings
 
   test:
-    name: Test (${{ matrix.partition }}/2)
+    name: Test (${{ matrix.crate }})
     runs-on: ubuntu-latest
+    needs: discover
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2]
+        crate: ${{ fromJson(needs.discover.outputs.crates) }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.95.0
@@ -50,4 +81,25 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack,cargo-nextest
-      - run: cargo hack nextest run --workspace ${{ env.HACK_POWERSET_FLAGS }} --partition ${{ matrix.partition }}/2 --no-tests=pass
+      - name: Test powerset
+        shell: bash
+        env:
+          CRATE: ${{ matrix.crate }}
+        run: |
+          set -euo pipefail
+          flags=$(python3 .github/scripts/hack-flags.py "crates/$CRATE")
+          echo "hack flags: $flags"
+          # unquoted: the translator emits several arguments
+          cargo hack nextest run -p "$CRATE" $flags --no-tests=pass
+
+  # hack.toml skips the docs feature, so it is covered here instead.
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
