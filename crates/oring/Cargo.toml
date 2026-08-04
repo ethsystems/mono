@@ -24,12 +24,12 @@ ark-serialize = { version = "0.6", default-features = false, optional = true }
 rayon = { version = "1.10", optional = true }
 serde = { version = "1", default-features = false, features = ["derive", "alloc"], optional = true }
 include-utils = { version = "0.2.4", optional = true }
-wincode = { version = "0.4", default-features = false, features = ["alloc", "derive"], optional = true }
+wincode = { version = "0.6", default-features = false, features = ["alloc", "derive"], optional = true }
 
 [dev-dependencies]
 proptest = "1"
 crabtime = "1.1.4"
-criterion = "0.5"
+criterion = { version = "0.8", features = ["html_reports"] }
 rand_chacha = "0.10"
 
 [features]

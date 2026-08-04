@@ -102,13 +102,13 @@ impl<K: Kem, D: Domain> Scanner<K, D> {
         &self.recipient
     }
 
-    /// Scans `envelopes` under this scanner's key, binding `aad` into the
-    /// AEAD for each envelope.
+    /// Scans `envelopes` under this scanner's key, binding `aad` into each
+    /// AEAD.
     ///
-    /// Yields one `(index, Result)` pair per input, in order. Commit
-    /// mismatch is not mine: skipped, never yielded. Commit match with a
-    /// failure afterward (AEAD, note decode, `Domain::verify`) yields
-    /// `Err(Malformed)`: an authenticated envelope that is wrong.
+    /// Yields `(index, Result)` per commit match, in input order; a mismatch
+    /// is not mine and is skipped, so the run is shorter than the input. A
+    /// match that fails afterward (AEAD, note decode, `Domain::verify`)
+    /// yields `Err(Malformed)`. Runs to completion before returning.
     pub fn scan<'a, B, I>(
         &mut self,
         envelopes: I,
