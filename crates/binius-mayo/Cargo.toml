@@ -1,0 +1,46 @@
+[package]
+name = "binius-mayo"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "binius-mayo: Binius64 zk-circuit library proving MAYO-2 post-quantum signature verification"
+# git dependencies cannot be packaged, so this crate cannot be published.
+publish = false
+include = [
+    "src/**/*.rs",
+    "benches/**/*.rs",
+    "examples/**/*.rs",
+    "tests/**/*.rs",
+    "tests/kat/*",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
+
+[dependencies]
+binius-core       = { git = "https://github.com/binius-zk/binius64", rev = "3bc7451dc3c52af6383fcd99892c6892f57e89b0" }
+binius-frontend   = { git = "https://github.com/binius-zk/binius64", rev = "3bc7451dc3c52af6383fcd99892c6892f57e89b0" }
+binius-circuits   = { git = "https://github.com/binius-zk/binius64", rev = "3bc7451dc3c52af6383fcd99892c6892f57e89b0" }
+binius-transcript = { git = "https://github.com/binius-zk/binius64", rev = "3bc7451dc3c52af6383fcd99892c6892f57e89b0" }
+binius-prover     = { git = "https://github.com/binius-zk/binius64", rev = "3bc7451dc3c52af6383fcd99892c6892f57e89b0" }
+binius-verifier   = { git = "https://github.com/binius-zk/binius64", rev = "3bc7451dc3c52af6383fcd99892c6892f57e89b0" }
+binius-hash       = { git = "https://github.com/binius-zk/binius64", rev = "3bc7451dc3c52af6383fcd99892c6892f57e89b0" }
+sha3              = "=0.10.9"
+aes               = "=0.8.4"
+rand              = "0.10"
+
+[dev-dependencies]
+hex               = "0.4"
+rand              = "0.10"
+criterion         = { workspace = true, features = ["plotters", "cargo_bench_support", "html_reports"] }
+
+[[bench]]
+name    = "prove_verify"
+harness = false
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

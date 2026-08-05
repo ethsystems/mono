@@ -6,6 +6,12 @@ over OIDC through crates.io Trusted Publishing.
 
 One tag releases one crate.
 
+`binius-mayo` cannot be released this way today: its dependencies are pinned
+to a git revision, and `cargo package` (part of the `gate` job below) refuses
+git dependencies outright. It carries `publish = false` for that reason.
+Releasing it requires those dependencies to reach crates.io, or to be
+vendored.
+
 ## Before your first release
 
 You need SSH commit signing set up. The workflow rejects unsigned tags.
@@ -75,7 +81,7 @@ You are the last human between a commit and every downstream build. Open the
   not recognise is a reason to stop.
 - **any `build.rs` warning**. A build script runs on every machine that
   compiles the crate. The gate prints its full contents when one exists.
-  Neither crate ships one today.
+  None of the crates ship one today.
 - **the semver check result**, if the crate has a published baseline.
 
 Then approve in the Actions run.
