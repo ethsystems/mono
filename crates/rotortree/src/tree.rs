@@ -32,9 +32,9 @@ pub(crate) fn ceil_log_n(size: u64, n: usize) -> usize {
         return 0;
     }
     if n.is_power_of_two() {
-        let k = n.trailing_zeros();
-        let bits = u64::BITS - (size - 1).leading_zeros();
-        return bits.div_ceil(k) as usize;
+        let radix_bits = n.trailing_zeros();
+        let span_bits = u64::BITS - (size - 1).leading_zeros();
+        return span_bits.div_ceil(radix_bits) as usize;
     }
     (size - 1).ilog(n as u64) as usize + 1
 }
@@ -137,13 +137,13 @@ impl<const N: usize, const MAX_DEPTH: usize> TreeInner<N, MAX_DEPTH> {
 
         let depth = self.depth;
         let level0_len = self.levels[0].len();
-        let mut current: Vec<Hash> = Vec::with_capacity(level0_len);
+        let mut frontier: Vec<Hash> = Vec::with_capacity(level0_len);
         for i in 0..level0_len {
-            current.push(self.levels[0].get(i).ok()?);
+            frontier.push(self.levels[0].get(i).ok()?);
         }
 
         for _level in 0..depth {
-            let len = current.len();
+            let len = frontier.len();
             let num_parents = len.div_ceil(N);
 
             #[cfg(feature = "parallel")]
@@ -156,7 +156,7 @@ impl<const N: usize, const MAX_DEPTH: usize> TreeInner<N, MAX_DEPTH> {
                             let base = ci * PAR_CHUNK_SIZE;
                             for (i, slot) in chunk.iter_mut().enumerate() {
                                 *slot =
-                                    Self::_hash_group(&current, base + i, len, hasher);
+                                    Self::_hash_group(&frontier, base + i, len, hasher);
                             }
                         },
                     );
@@ -164,7 +164,7 @@ impl<const N: usize, const MAX_DEPTH: usize> TreeInner<N, MAX_DEPTH> {
                 } else {
                     (0..num_parents)
                         .map(|parent_idx| {
-                            Self::_hash_group(&current, parent_idx, len, hasher)
+                            Self::_hash_group(&frontier, parent_idx, len, hasher)
                         })
                         .collect()
                 }
@@ -172,13 +172,13 @@ impl<const N: usize, const MAX_DEPTH: usize> TreeInner<N, MAX_DEPTH> {
 
             #[cfg(not(feature = "parallel"))]
             let parents: Vec<Hash> = (0..num_parents)
-                .map(|parent_idx| Self::_hash_group(&current, parent_idx, len, hasher))
+                .map(|parent_idx| Self::_hash_group(&frontier, parent_idx, len, hasher))
                 .collect();
 
-            current = parents;
+            frontier = parents;
         }
 
-        current.first().copied()
+        frontier.first().copied()
     }
 
     #[cfg(feature = "storage")]
@@ -191,8 +191,8 @@ impl<const N: usize, const MAX_DEPTH: usize> TreeInner<N, MAX_DEPTH> {
     ) -> Hash {
         let start = parent_idx * N;
         let end = core::cmp::min(start + N, len);
-        let count = end - start;
-        if count == 1 {
+        let tally = end - start;
+        if tally == 1 {
             current[start]
         } else {
             hasher.hash_children(&current[start..end])
@@ -354,32 +354,36 @@ impl<H: Hasher, const N: usize, const MAX_DEPTH: usize> LeanIMT<H, N, MAX_DEPTH>
         }
         let index = u64_to_usize(inner.size)?;
 
-        let mut node = leaf;
-        let mut idx = index;
+        let mut rung = leaf;
+        let mut locus = index;
         for level in 0..depth {
-            inner.levels[level].set(idx, node)?;
+            inner.levels[level].set(locus, rung)?;
 
-            let child_pos = idx % N;
-            if child_pos != 0 {
-                let group_start = idx - child_pos;
-                let count = child_pos + 1;
+            let sibling_rank = locus % N;
+            if sibling_rank != 0 {
+                let group_start = locus - sibling_rank;
+                let tally = sibling_rank + 1;
                 let mut children = [[0u8; 32]; N];
-                if child_pos > 0 {
-                    inner.levels[level].get_group(group_start, child_pos, &mut children);
+                if sibling_rank > 0 {
+                    inner.levels[level].get_group(
+                        group_start,
+                        sibling_rank,
+                        &mut children,
+                    );
                 }
-                children[child_pos] = node;
-                node = hasher.hash_children(&children[..count]);
+                children[sibling_rank] = rung;
+                rung = hasher.hash_children(&children[..tally]);
             }
-            idx /= N;
+            locus /= N;
         }
 
         if depth < MAX_DEPTH {
-            inner.levels[depth].set(0, node)?;
+            inner.levels[depth].set(0, rung)?;
         }
-        inner.root = Some(node);
+        inner.root = Some(rung);
         inner.size = new_size;
         inner.depth = depth;
-        Ok(node)
+        Ok(rung)
     }
 
     /// Compute the parent hash for a group at `parent_idx`
@@ -393,13 +397,13 @@ impl<H: Hasher, const N: usize, const MAX_DEPTH: usize> LeanIMT<H, N, MAX_DEPTH>
     ) -> Result<Hash, TreeError> {
         let group_start = parent_idx * N;
         let group_end = core::cmp::min(group_start + N, level_len);
-        let count = group_end - group_start;
-        if count == 1 {
+        let tally = group_end - group_start;
+        if tally == 1 {
             child_level.get(group_start)
         } else {
             let mut children = [[0u8; 32]; N];
-            child_level.get_group(group_start, count, &mut children);
-            Ok(hasher.hash_children(&children[..count]))
+            child_level.get_group(group_start, tally, &mut children);
+            Ok(hasher.hash_children(&children[..tally]))
         }
     }
 

@@ -160,10 +160,10 @@ fn derive<S: Zeroize + AsRef<[u8]>>(
     epk: &[u8],
     pk_r: &[u8],
 ) -> Derived {
-    let mut info =
+    let mut info_scratch =
         Vec::with_capacity(INFO_FIXED_LEN + tag.len() + epk.len() + pk_r.len());
-    write_kdf_info(&mut info, VERSION, kem_id, tag, epk, pk_r);
-    let derived = expand(shared.as_ref(), &info);
+    write_kdf_info(&mut info_scratch, VERSION, kem_id, tag, epk, pk_r);
+    let derived = expand(shared.as_ref(), &info_scratch);
     shared.zeroize();
     derived
 }
@@ -171,19 +171,19 @@ fn derive<S: Zeroize + AsRef<[u8]>>(
 /// Builds a ChaCha20-Poly1305 cipher from `key`, wiping the key copy the
 /// construction consumes.
 pub(crate) fn cipher_from(key: &[u8; KEY_LEN]) -> ChaCha20Poly1305 {
-    let mut key = Key::from(*key);
-    let cipher = ChaCha20Poly1305::new(&key);
-    key.as_mut_slice().zeroize();
-    cipher
+    let mut key_block = Key::from(*key);
+    let sealer = ChaCha20Poly1305::new(&key_block);
+    key_block.as_mut_slice().zeroize();
+    sealer
 }
 
 /// Constant-time test for an all-zero byte string.
 fn is_all_zero(bytes: &[u8]) -> bool {
-    let mut acc = 0u8;
-    for byte in bytes {
-        acc |= byte;
+    let mut residue = 0u8;
+    for octet in bytes {
+        residue |= octet;
     }
-    acc.ct_eq(&0).into()
+    residue.ct_eq(&0).into()
 }
 
 /// Seals `note` to `pk` under domain `D`, binding `aad` into the AEAD.
