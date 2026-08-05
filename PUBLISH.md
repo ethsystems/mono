@@ -127,7 +127,7 @@ At `https://crates.io/crates/<crate>/settings`:
    | field | value |
    |---|---|
    | Repository owner | `ethsystems` |
-   | Repository name | `mono` |
+   | Repository name | `works` |
    | Workflow filename | `publish.yml` |
    | Environment | `crates-io` |
 
@@ -167,8 +167,8 @@ crates.io stores no provenance and cargo verifies none, so this is manual:
 ```sh
 curl -LO https://static.crates.io/crates/rotortree/rotortree-0.18.0.crate
 gh attestation verify rotortree-0.18.0.crate \
-  --repo ethsystems/mono \
-  --signer-workflow ethsystems/mono/.github/workflows/publish.yml
+  --repo ethsystems/works \
+  --signer-workflow ethsystems/works/.github/workflows/publish.yml
 ```
 
 `--signer-workflow` is load-bearing. Without it the check passes for any
