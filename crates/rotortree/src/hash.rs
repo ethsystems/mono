@@ -24,9 +24,9 @@ pub trait Hasher: Clone + Send + Sync + 'static {
     /// digest compatible with other implementations.
     #[inline]
     fn hash_children(&self, children: &[Hash]) -> Hash {
-        let mut state = self.new_state();
-        state.update(children.as_flattened());
-        state.finalize()
+        let mut sponge = self.new_state();
+        sponge.update(children.as_flattened());
+        sponge.finalize()
     }
 
     /// Hash a batch of independent parent groups into `out`.

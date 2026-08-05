@@ -70,11 +70,11 @@ pub(crate) fn compute_rhs(
     // Sanity: this routine assumes the MAYO-2 tail polynomial.
     debug_assert_eq!(M, 64);
 
-    let b = builder.subcircuit("whipping/compute_rhs");
+    let scope = builder.subcircuit("whipping/compute_rhs");
 
     // Initial accumulator = 0 (all four planes are constant zero).
-    let zero = b.add_constant(binius_core::word::Word::ZERO);
-    let mut acc = BitslicedGf16Mvec {
+    let zero = scope.add_constant(binius_core::word::Word::ZERO);
+    let mut ledger = BitslicedGf16Mvec {
         bits: [zero, zero, zero, zero],
     };
 
@@ -83,23 +83,23 @@ pub(crate) fn compute_rhs(
     for i_inv in 0..K {
         let i = K - 1 - i_inv;
         for j in i..K {
-            // Step 1: acc <- acc * z mod f(z).
+            // Step 1: ledger <- ledger * z mod f(z).
             //
             // Extract `top` bits, one per plane, from bit 63 of each
             // plane. After `shr(_, 63)`, only bit 0 of the result is
             // potentially set (the other 63 bits are zero), so no
             // additional masking is required.
-            let t0 = b.shr(acc.bits[0], 63);
-            let t1 = b.shr(acc.bits[1], 63);
-            let t2 = b.shr(acc.bits[2], 63);
-            let t3 = b.shr(acc.bits[3], 63);
+            let t0 = scope.shr(ledger.bits[0], 63);
+            let t1 = scope.shr(ledger.bits[1], 63);
+            let t2 = scope.shr(ledger.bits[2], 63);
+            let t3 = scope.shr(ledger.bits[3], 63);
 
             // Shift each plane left by 1 bit (lane ell <- lane ell-1; lane
             // 0 becomes 0, lane M-1 = 63 falls off; that's `top`).
-            let s0 = b.shl(acc.bits[0], 1);
-            let s1 = b.shl(acc.bits[1], 1);
-            let s2 = b.shl(acc.bits[2], 1);
-            let s3 = b.shl(acc.bits[3], 1);
+            let s0 = scope.shl(ledger.bits[0], 1);
+            let s1 = scope.shl(ledger.bits[1], 1);
+            let s2 = scope.shl(ledger.bits[2], 1);
+            let s3 = scope.shl(ledger.bits[3], 1);
 
             // Per-plane fold contributions. For nibble bit `b`, the new
             // plane is `shifted[b]` XORed with the bit-`b` projection of
@@ -115,13 +115,13 @@ pub(crate) fn compute_rhs(
 
             // top*8 bit-projections (shared between lane 0 and lane 3).
             let m8_0 = t1; // (top*8)_0 = t1
-            let m8_1 = b.bxor(t1, t2); // (top*8)_1 = t1 ^ t2
-            let m8_2 = b.bxor(t2, t3); // (top*8)_2 = t2 ^ t3
-            let m8_3 = b.bxor(t0, t3); // (top*8)_3 = t0 ^ t3
+            let m8_1 = scope.bxor(t1, t2); // (top*8)_1 = t1 ^ t2
+            let m8_2 = scope.bxor(t2, t3); // (top*8)_2 = t2 ^ t3
+            let m8_3 = scope.bxor(t0, t3); // (top*8)_3 = t0 ^ t3
 
             // top*2 bit-projections (used at lane 2).
             let m2_0 = t3; // (top*2)_0 = t3
-            let m2_1 = b.bxor(t0, t3); // (top*2)_1 = t0 ^ t3
+            let m2_1 = scope.bxor(t0, t3); // (top*2)_1 = t0 ^ t3
             let m2_2 = t1; // (top*2)_2 = t1
             let m2_3 = t2; // (top*2)_3 = t2
 
@@ -132,37 +132,37 @@ pub(crate) fn compute_rhs(
             // m8_b (at bit 0) is m8_b itself (shr produced a value with
             // only bit 0 set). Lane 3 needs m8_b shifted left by 3, lane 2
             // needs m2_b shifted left by 2.
-            let f0_lane3 = b.shl(m8_0, 3);
-            let f0_lane2 = b.shl(m2_0, 2);
-            let new0 = b.bxor_multi(&[s0, m8_0, f0_lane2, f0_lane3]);
+            let f0_lane3 = scope.shl(m8_0, 3);
+            let f0_lane2 = scope.shl(m2_0, 2);
+            let new0 = scope.bxor_multi(&[s0, m8_0, f0_lane2, f0_lane3]);
 
-            let f1_lane3 = b.shl(m8_1, 3);
-            let f1_lane2 = b.shl(m2_1, 2);
-            let new1 = b.bxor_multi(&[s1, m8_1, f1_lane2, f1_lane3]);
+            let f1_lane3 = scope.shl(m8_1, 3);
+            let f1_lane2 = scope.shl(m2_1, 2);
+            let new1 = scope.bxor_multi(&[s1, m8_1, f1_lane2, f1_lane3]);
 
-            let f2_lane3 = b.shl(m8_2, 3);
-            let f2_lane2 = b.shl(m2_2, 2);
-            let new2 = b.bxor_multi(&[s2, m8_2, f2_lane2, f2_lane3]);
+            let f2_lane3 = scope.shl(m8_2, 3);
+            let f2_lane2 = scope.shl(m2_2, 2);
+            let new2 = scope.bxor_multi(&[s2, m8_2, f2_lane2, f2_lane3]);
 
-            let f3_lane3 = b.shl(m8_3, 3);
-            let f3_lane2 = b.shl(m2_3, 2);
-            let new3 = b.bxor_multi(&[s3, m8_3, f3_lane2, f3_lane3]);
+            let f3_lane3 = scope.shl(m8_3, 3);
+            let f3_lane2 = scope.shl(m2_3, 2);
+            let new3 = scope.bxor_multi(&[s3, m8_3, f3_lane2, f3_lane3]);
 
-            acc = BitslicedGf16Mvec {
+            ledger = BitslicedGf16Mvec {
                 bits: [new0, new1, new2, new3],
             };
 
             // Step 2: XOR in SPS contributions.
             let upper = &sps[i * K + j];
-            acc = acc.add(&b, upper);
+            ledger = ledger.add(&scope, upper);
             if i != j {
                 let lower = &sps[j * K + i];
-                acc = acc.add(&b, lower);
+                ledger = ledger.add(&scope, lower);
             }
         }
     }
 
-    acc
+    ledger
 }
 
 #[cfg(test)]

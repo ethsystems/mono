@@ -57,13 +57,13 @@ fn mul2(
     let y2 = builder.band(a1, b1);
     // y1 = (a0 ^ a1) & (b0 ^ b1) ^ y0 ^ y2
     //
-    // We could do this as (sum_a) & (sum_b) then XOR with y0 and y2 separately;
+    // We could do this as (lane_a) & (lane_b) then XOR with y0 and y2 separately;
     // binius64's `fax` gate fuses (x & y) ^ w into a single AND constraint, so
     // we use it once after pre-XORing y0 ⊕ y2.
-    let sum_a = builder.bxor(a0, a1);
-    let sum_b = builder.bxor(b0, b1);
-    let y0_xor_y2 = builder.bxor(y0, y2);
-    let y1 = builder.fax(sum_a, sum_b, y0_xor_y2);
+    let lane_a = builder.bxor(a0, a1);
+    let lane_b = builder.bxor(b0, b1);
+    let y_bridge = builder.bxor(y0, y2);
+    let y1 = builder.fax(lane_a, lane_b, y_bridge);
     (y2, y1, y0)
 }
 
