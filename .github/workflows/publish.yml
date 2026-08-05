@@ -174,7 +174,7 @@ jobs:
         run: |
           set -euo pipefail
           # No baseline exists for a first release, so the check is skipped.
-          if curl -sfL -H 'User-Agent: ethsystems-mono-release-ci' \
+          if curl -sfL -H 'User-Agent: ethsystems-works-release-ci' \
               -o /dev/null "https://crates.io/api/v1/crates/$CRATE"; then
             cargo semver-checks --package "$CRATE"
           else
@@ -330,7 +330,7 @@ jobs:
           # The index lags the upload by seconds. Poll rather than assume.
           cksum=""
           for _ in $(seq 1 30); do
-            line=$(curl -sfL -H 'User-Agent: ethsystems-mono-release-ci' \
+            line=$(curl -sfL -H 'User-Agent: ethsystems-works-release-ci' \
               "https://index.crates.io/$idx" || true)
             cksum=$(jq -r --arg v "$VERSION" \
               'select(.vers == $v) | .cksum' <<< "$line" 2>/dev/null | head -n1 || true)
@@ -347,7 +347,7 @@ jobs:
             exit 1
           fi
 
-          curl -sfL -H 'User-Agent: ethsystems-mono-release-ci' \
+          curl -sfL -H 'User-Agent: ethsystems-works-release-ci' \
             -o "dist/$CRATE-$VERSION.crate" \
             "https://static.crates.io/crates/$name/$name-$VERSION.crate"
 

@@ -8,7 +8,7 @@ If you believe you have found a security vulnerability in this repository, pleas
 
 **Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
 
-Instead, please use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/ethsystems/mono/security/advisories/new) tab.
+Instead, please use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/ethsystems/works/security/advisories/new) tab.
 
 We will send a response indicating the next steps in handling your report. After the initial reply, we will keep you informed of the progress towards a fix and full announcement, and may ask for additional information or guidance.
 
@@ -28,4 +28,4 @@ Report security bugs in third-party modules to the person or team maintaining th
 
 ## Non-Security Issues
 
-If the issue is not security-related, please report it publicly by opening a [GitHub Issue](https://github.com/ethsystems/mono/issues/new).
+If the issue is not security-related, please report it publicly by opening a [GitHub Issue](https://github.com/ethsystems/works/issues/new).
