@@ -57,7 +57,8 @@ pub trait Tickable {
     fn checkpoint(&mut self);
     /// Snapshots the current driver and engine state.
     fn status(&self) -> DriverStatus;
-    /// Delay before the next tick: poll interval, or capped exponential backoff.
+    /// Delay before the next tick: zero while catching up, the poll interval at
+    /// the tip, or capped exponential backoff after a source error.
     fn next_delay(&self) -> Duration;
 }
 
@@ -96,7 +97,8 @@ pub struct DriverStatus {
     pub caught_up: bool,
     /// Events the fold declared not its own.
     pub skips: u64,
-    /// Highest cursor the sink reports durable; None without a sink or a flush.
+    /// Cursor the sink reports a restart would recover; None without a sink or a
+    /// flush. A resync lowers it, so it holds for the instant it was read.
     pub durable_cursor: Option<Position>,
     /// True once the sink refused an offer; folding continues unpersisted.
     pub durability_lost: bool,
@@ -170,6 +172,7 @@ where
     last_checkpoint_block: Option<u64>,
     last_snapshot_block: Option<u64>,
     durability_lost: bool,
+    advanced: bool,
 }
 
 impl<F, S> Driver<F, S>
@@ -311,6 +314,7 @@ where
             last_checkpoint_block: None,
             last_snapshot_block: None,
             durability_lost: false,
+            advanced: false,
         })
     }
 
@@ -497,8 +501,23 @@ where
         Tick::Resynced
     }
 
-    /// Runs one poll-apply step, deferring fork recovery to `on_fork`.
+    /// Runs one poll-apply step, then records whether the cursor moved forward.
     fn step<Fork>(&mut self, on_fork: Fork) -> Tick
+    where
+        Fork: FnOnce(&mut Self) -> Tick,
+    {
+        let tick = self.poll_apply(on_fork);
+        // Only forward cursor movement earns an immediate re-poll; a batch the
+        // engine fully deduped leaves the loop on its poll interval.
+        self.advanced = matches!(
+            tick,
+            Tick::Progressed(summary) if summary.applied > 0 || summary.skipped > 0
+        );
+        tick
+    }
+
+    /// Polls the source and applies the batch, deferring fork recovery to `on_fork`.
+    fn poll_apply<Fork>(&mut self, on_fork: Fork) -> Tick
     where
         Fork: FnOnce(&mut Self) -> Tick,
     {
@@ -581,7 +600,12 @@ where
 
     fn next_delay(&self) -> Duration {
         if self.consecutive_errors == 0 {
-            return self.config.poll_interval;
+            // Catch-up polls run back to back; the poll interval paces the tip.
+            return if self.advanced {
+                Duration::ZERO
+            } else {
+                self.config.poll_interval
+            };
         }
         let exponent = self.consecutive_errors - 1;
         let factor = 1u32.checked_shl(exponent).unwrap_or(u32::MAX);
@@ -841,12 +865,18 @@ mod tests {
         vec::Vec,
     };
 
-    use crate::test_util::{
-        FailKind,
-        PollFailure,
-        RecordingFold,
-        ScriptedChain,
-        WatermarkSink,
+    use crate::{
+        batch::{
+            BlockSpan,
+            LogEvent,
+        },
+        test_util::{
+            FailKind,
+            PollFailure,
+            RecordingFold,
+            ScriptedChain,
+            WatermarkSink,
+        },
     };
 
     /// Wraps a scripted chain, counting probes and optionally failing the next few.
@@ -895,6 +925,39 @@ mod tests {
                 return Err(PollFailure);
             }
             self.inner.header_at(number)
+        }
+    }
+
+    /// Source that re-serves the same one-event block on every poll.
+    struct Stuck {
+        block: BlockRef,
+    }
+
+    impl EventSource for Stuck {
+        type Event = u64;
+        type Error = PollFailure;
+
+        fn next_batch(
+            &mut self,
+            cursor: Option<Position>,
+            out: &mut Batch<u64>,
+        ) -> Result<(), PollFailure> {
+            out.clear();
+            out.boundary = cursor.map(|_| self.block);
+            out.spans.push(BlockSpan {
+                block: self.block,
+                start: 0,
+                end: 1,
+            });
+            out.events.push(LogEvent {
+                log_index: 0,
+                event: 1,
+            });
+            Ok(())
+        }
+
+        fn horizon(&self) -> ReplayHorizon {
+            ReplayHorizon::Genesis
         }
     }
 
@@ -969,12 +1032,23 @@ mod tests {
         }
     }
 
-    fn sink_driver(
-        blocks: u64,
-        slots: usize,
-        config: DriverConfig,
-    ) -> Driver<RecordingFold, ScriptedChain, NoAnchor<Vec<(Position, u64)>>, WatermarkSink>
-    {
+    /// Recording fold over a scripted chain, offering snapshots to a watermark sink.
+    type SinkDriver = Driver<
+        RecordingFold,
+        ScriptedChain,
+        NoAnchor<Vec<(Position, u64)>>,
+        WatermarkSink,
+    >;
+
+    /// Probe-capable counterpart of `SinkDriver`, so a fork bisects before rolling back.
+    type ProbedSinkDriver = Probed<
+        RecordingFold,
+        ScriptedChain,
+        NoAnchor<Vec<(Position, u64)>>,
+        WatermarkSink,
+    >;
+
+    fn sink_driver(blocks: u64, slots: usize, config: DriverConfig) -> SinkDriver {
         Driver::with_sink(
             RecordingFold::default(),
             one_event_chain(blocks),
@@ -989,8 +1063,7 @@ mod tests {
         blocks: u64,
         slots: usize,
         config: DriverConfig,
-    ) -> Probed<RecordingFold, ScriptedChain, NoAnchor<Vec<(Position, u64)>>, WatermarkSink>
-    {
+    ) -> ProbedSinkDriver {
         Probed::with_sink(
             RecordingFold::default(),
             one_event_chain(blocks),
@@ -1123,6 +1196,23 @@ mod tests {
     }
 
     #[test]
+    fn resync_lowers_the_reported_durable_cursor() {
+        // given eight blocks driven to a durable cursor at block 5
+        let mut driver = sink_driver(8, 4, cadence_config(1, 1));
+        run_to_idle(&mut driver);
+        let before = driver.status().durable_cursor.expect("offers were made");
+        assert_eq!(before, Position::new(5, 0));
+        // when a reorg below the ring forces a resync and folding rebuilds from genesis
+        driver.source_mut().reorg(8, &[&[10], &[20], &[30], &[40]]);
+        let outcome = driver.tick();
+        run_to_idle(&mut driver);
+        // then the durable cursor names the rebuilt state, below where it stood
+        assert_eq!(outcome, Tick::Resynced);
+        let after = driver.status().durable_cursor.expect("offers resumed");
+        assert!(after < before);
+    }
+
+    #[test]
     fn driver_folds_to_tip_and_reports_caught_up() {
         // given a ten-block chain with one event per block
         let mut chain = ScriptedChain::new(1);
@@ -1169,7 +1259,8 @@ mod tests {
         let third = driver.tick();
         let third_delay = driver.next_delay();
         let fourth = driver.tick();
-        // then three SourceError ticks with next_delay 200ms, 400ms, 800ms, then progress
+        // then three SourceError ticks with next_delay 200ms, 400ms, 800ms, then a
+        // progressing tick that clears the backoff
         assert_eq!(first, Tick::SourceError);
         assert_eq!(first_delay, Duration::from_millis(200));
         assert_eq!(second, Tick::SourceError);
@@ -1177,7 +1268,7 @@ mod tests {
         assert_eq!(third, Tick::SourceError);
         assert_eq!(third_delay, Duration::from_millis(800));
         assert!(matches!(fourth, Tick::Progressed(_)));
-        assert_eq!(driver.next_delay(), Duration::from_secs(1));
+        assert_eq!(driver.next_delay(), Duration::ZERO);
     }
 
     #[test]
@@ -1192,6 +1283,64 @@ mod tests {
         }
         // then next_delay equals backoff_max
         assert_eq!(driver.next_delay(), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn catch_up_ticks_ask_for_no_delay_until_the_tip() {
+        // given ten one-event blocks served one per poll
+        let mut driver = new_driver(
+            one_event_chain(10),
+            engine_config(0),
+            DriverConfig::default(),
+        );
+        // when one tick folds a block and the rest run to the tip
+        driver.tick();
+        let while_behind = driver.next_delay();
+        run_to_idle(&mut driver);
+        let at_tip = driver.next_delay();
+        // then the catch-up tick asks for no delay and the tip tick asks for the interval
+        assert_eq!(while_behind, Duration::ZERO);
+        assert_eq!(at_tip, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_fully_deduped_batch_keeps_the_poll_interval() {
+        // given a source that re-serves the same one-event block on every poll
+        let block = BlockRef {
+            number: 1,
+            hash: [7u8; 32],
+        };
+        let mut driver = Driver::new(
+            RecordingFold::default(),
+            Stuck { block },
+            engine_config(0),
+            DriverConfig::default(),
+        )
+        .unwrap();
+        // when the first tick applies the block and the second dedupes it
+        let applying = driver.tick();
+        let after_apply = driver.next_delay();
+        let deduping = driver.tick();
+        let after_dedup = driver.next_delay();
+        // then only the applying tick asks for an immediate re-poll
+        assert_eq!(
+            applying,
+            Tick::Progressed(ApplySummary {
+                applied: 1,
+                deduped: 0,
+                skipped: 0,
+            })
+        );
+        assert_eq!(after_apply, Duration::ZERO);
+        assert_eq!(
+            deduping,
+            Tick::Progressed(ApplySummary {
+                applied: 0,
+                deduped: 1,
+                skipped: 0,
+            })
+        );
+        assert_eq!(after_dedup, Duration::from_secs(1));
     }
 
     #[test]

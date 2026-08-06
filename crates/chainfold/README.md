@@ -24,8 +24,8 @@ durable, a reorg noticed only when a proof stops verifying.
   `header_at` for the deepest still-canonical block, rolls back to the newest checkpoint
   at or below it, and refolds forward. `O(log W)` probes, then deterministic replay.
 - **persist**: the driver offers the oldest retained checkpoint to a sink; a flusher
-  thread fsyncs it. The durable cursor is a monotone underestimate of the applied
-  cursor, so the apply path never fsyncs and replay closes the gap.
+  thread fsyncs it. The durable cursor trails the applied cursor and names what a
+  restart recovers, so the apply path never fsyncs and replay closes the gap.
 
 ```mermaid
 flowchart LR
@@ -82,6 +82,10 @@ and recovery), and the adapters (`std`: tokio harness, snapshot store, flusher).
 - the durable cursor rides the manifest as a watermark. Commit writes a temp file, fsyncs
   it, renames, then fsyncs the directory; the manifest is dual-slot, and a commit
   overwrites the older slot so a torn write only damages the copy already superseded.
+- the watermark names the snapshot the manifest points at, so a resync that persists
+  state from genesis lowers it. Reporting the old height would promise a restart point
+  the store no longer holds, and holding the pre-resync snapshot would recover state
+  folded on a chain that no longer exists.
 - the observed ring is structure-of-arrays with power-of-two capacity, so bisection binary
   searches the number lane alone and touches one hash at the end. W = 1024 is 40 KiB.
 - `Batch` is flat: one contiguous event array plus a span array indexing into it. Two
@@ -163,7 +167,7 @@ the `with_anchor`, `with_sink`, and `resume*` constructors.
 `SnapshotStore::open` returns whatever the last commit made durable, `Engine::decode_snapshot`
 rebuilds an engine from it, and `resume` polls onward from the durable cursor. `Flusher` is
 the `SnapshotSink` in between: the driver offers, the flusher thread fsyncs, and the
-watermark advances only when the fsync returns.
+watermark moves onto the committed snapshot only when the fsync returns.
 
 `examples/replay.rs` runs the whole shape end to end: fold to the tip under a live flusher,
 survive a reorg, then restart from the durable cursor and converge on the same view.
@@ -202,8 +206,9 @@ dependency stack that a guest or wasm build has no use for.
   your chain produces.
 - `DriverConfig::snapshot_interval`: blocks of durable-point progress between sink offers.
   `None` disables offers entirely.
-- `DriverConfig::poll_interval`, `backoff_base`, `backoff_max`: cadence while healthy, and
-  the capped exponential backoff after a source error.
+- `DriverConfig::poll_interval`, `backoff_base`, `backoff_max`: cadence at the tip, and
+  the capped exponential backoff after a source error. A tick that moved the cursor asks
+  for no delay, so catch-up and post-resync replay run at source speed.
 - `Flusher::spawn(store, queue_depth)`: snapshot jobs admitted before an offer blocks. The
   bound is the backpressure signal when the disk falls behind.
 - `StoreConfig::retain`: superseded snapshot files kept beyond the two the manifest names,

@@ -182,13 +182,14 @@ fn run_flusher<V: Vfs>(
         }
         match store.commit(&job.snapshot, job.cursor) {
             Ok(()) => {
+                let committed = store.durable_cursor();
                 let mut watermark = durable_cursor
                     .lock()
                     .expect("durable cursor mutex poisoned");
-                // The watermark only rises, keeping it a safe underestimate.
-                if job.cursor > *watermark {
-                    *watermark = job.cursor;
-                }
+                // A commit supersedes whatever the store held, so the watermark
+                // tracks it down as well as up and always names what a reopen
+                // recovers. A resync commits older state and lowers it.
+                *watermark = committed;
                 drop(watermark);
                 job.token.complete(Ok(()));
             }
@@ -259,7 +260,8 @@ impl<V: Vfs + Send + 'static> Flusher<V> {
         Ok(DurabilityToken { state: token })
     }
 
-    /// Highest cursor whose flush has durably completed.
+    /// Cursor a reopen of the store would recover; falls when a resync commits
+    /// older state.
     pub fn durable_cursor(&self) -> Option<Position> {
         *self
             .durable_cursor
@@ -437,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn watermark_is_a_safe_underestimate() {
+    fn watermark_tracks_the_last_committed_cursor() {
         // given three submits with strictly increasing cursors, each waited before the next
         let dir = PathBuf::from("/flusher");
         let (store, _) = SnapshotStore::open(config(dir, 1), CrashVfs::new()).unwrap();
@@ -445,7 +447,8 @@ mod tests {
         let first_cursor = Some(Position::new(1, 0));
         let second_cursor = Some(Position::new(2, 0));
         let third_cursor = Some(Position::new(3, 0));
-        // when each submit is waited on before the next one is issued
+        // when each submit is waited on before the next one is issued, the last one
+        // carrying an older cursor as a resync would
         let first = flusher.submit(b"one".to_vec(), first_cursor).unwrap();
         assert_eq!(first.wait(), Ok(()));
         let after_first = flusher.durable_cursor();
@@ -455,16 +458,43 @@ mod tests {
         let third = flusher.submit(b"three".to_vec(), third_cursor).unwrap();
         assert_eq!(third.wait(), Ok(()));
         let after_third = flusher.durable_cursor();
-        let out_of_order = flusher.submit(b"stale".to_vec(), first_cursor).unwrap();
-        assert_eq!(out_of_order.wait(), Ok(()));
-        let after_out_of_order = flusher.durable_cursor();
-        // then durable_cursor tracks the highest completed cursor and never retracts
+        let older = flusher.submit(b"resynced".to_vec(), first_cursor).unwrap();
+        assert_eq!(older.wait(), Ok(()));
+        let after_older = flusher.durable_cursor();
+        // then durable_cursor names the cursor of the snapshot the store now holds
         assert_eq!(after_first, first_cursor);
         assert_eq!(after_second, second_cursor);
         assert_eq!(after_third, third_cursor);
         assert!(after_first < after_second);
         assert!(after_second < after_third);
-        assert_eq!(after_out_of_order, third_cursor);
+        assert_eq!(after_older, first_cursor);
+    }
+
+    #[test]
+    fn watermark_matches_what_a_reopen_recovers_after_older_state_commits() {
+        // given a flusher that committed block 3 and then committed block 1 on top
+        let dir = PathBuf::from("/flusher-resync");
+        let (store, _) =
+            SnapshotStore::open(config(dir.clone(), 1), CrashVfs::new()).unwrap();
+        let flusher = Flusher::spawn(store, 4);
+        let high = flusher
+            .submit(b"folded".to_vec(), Some(Position::new(3, 0)))
+            .unwrap();
+        assert_eq!(high.wait(), Ok(()));
+        let low = flusher
+            .submit(b"resynced".to_vec(), Some(Position::new(1, 0)))
+            .unwrap();
+        assert_eq!(low.wait(), Ok(()));
+        // when the watermark is read and the store is joined and reopened
+        let watermark = flusher.durable_cursor();
+        let store = flusher.join().unwrap();
+        let (_, recovered) =
+            SnapshotStore::open(config(dir, 1), store.into_vfs()).unwrap();
+        // then the watermark equals the cursor and bytes the reopen recovers
+        let recovered = recovered.expect("the resynced snapshot is durable");
+        assert_eq!(watermark, Some(Position::new(1, 0)));
+        assert_eq!(recovered.cursor, watermark);
+        assert_eq!(recovered.snapshot.as_slice(), b"resynced".as_slice());
     }
 
     #[test]

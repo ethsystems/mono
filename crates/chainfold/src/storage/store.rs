@@ -200,7 +200,7 @@ impl<V: Vfs> SnapshotStore<V> {
         Ok((store, recovered))
     }
 
-    /// Durably commits one snapshot and advances the cursor watermark.
+    /// Durably commits one snapshot and moves the cursor watermark onto it.
     ///
     /// | crash lands | on-disk state | recovery |
     /// |---|---|---|
@@ -251,7 +251,7 @@ impl<V: Vfs> SnapshotStore<V> {
         Ok(())
     }
 
-    /// Highest cursor whose snapshot commit fully synced; a safe underestimate.
+    /// Cursor of the snapshot the manifest points at; what a reopen recovers.
     pub fn durable_cursor(&self) -> Option<Position> {
         self.slots[self.active].and_then(|slot| slot.cursor)
     }
