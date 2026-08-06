@@ -6,9 +6,10 @@ Rust 1.95.0 (pinned via [`rust-toolchain.toml`](rust-toolchain.toml)).
 
 ## Crates
 
-- [`rotortree`](crates/rotortree): n-ary leanIMT implementation with persistence, for high-throughput append-only merkle trees.
+- [`rotortree`](crates/rotortree): An n-ary leanIMT implementation with persistence, for high-throughput append-only merkle trees.
 - [`sealring`](crates/sealring): A generic sealed-note envelope
-- [`binius-mayo`](crates/binius-mayo): Binius64 zk-circuit library proving MAYO-2 post-quantum signature verification
+- [`binius-mayo`](crates/binius-mayo): A Binius64 zk-circuit library proving MAYO-2 post-quantum signature verification
+- [`chainfold`](crates/chainfold): A sans-io fold engine for ordered chain events, with fork recovery and durable snapshots.
 
 ## Security
 

@@ -1,0 +1,61 @@
+[package]
+name = "chainfold"
+version = "0.2.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "event-sourced chain fold engine: total order, fork recovery, durable snapshots"
+include = [
+    "src/**/*.rs",
+    "benches/**/*.rs",
+    "examples/**/*.rs",
+    "tests/**/*.rs",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
+
+[dependencies]
+crc = { version = "3.4", default-features = false, optional = true }
+crc-fast = { version = "1.10", default-features = false, optional = true }
+include-utils = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive", "alloc"], optional = true }
+tokio = { version = "1", default-features = false, features = ["sync", "rt"], optional = true }
+wincode = { workspace = true, features = ["alloc", "derive"], optional = true }
+
+[dev-dependencies]
+chainfold = { path = ".", features = ["test-helpers"] }
+criterion = { workspace = true, features = ["cargo_bench_support", "html_reports", "plotters"] }
+proptest = { workspace = true, features = ["std", "fork", "timeout", "bit-set"] }
+tempfile = "3"
+tokio = { version = "1", default-features = false, features = ["sync", "rt", "macros", "time"] }
+
+[features]
+default = []
+std = ["serde?/std", "wincode?/std", "dep:crc-fast", "crc-fast/std"]
+serde = ["dep:serde"]
+wincode = ["dep:wincode", "dep:crc"]
+storage = ["std", "wincode"]
+tokio = ["std", "dep:tokio"]
+test-helpers = []
+docs = ["dep:include-utils"]
+
+[[bench]]
+name = "apply"
+harness = false
+required-features = ["std", "test-helpers"]
+
+[[bench]]
+name = "snapshot"
+harness = false
+required-features = ["std", "wincode", "test-helpers"]
+
+[[example]]
+name = "replay"
+required-features = ["tokio", "storage", "test-helpers"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
