@@ -10,7 +10,7 @@ use crate::{
 pub trait SnapshotSink<F> {
     /// Offers the engine's durable point for persistence; must not fsync.
     fn offer(&mut self, engine: &Engine<F>) -> Result<(), DurabilityLost>;
-    /// Highest cursor known durable; a monotone safe underestimate.
+    /// Cursor a restart would recover; falls when a resync persists older state.
     fn durable_cursor(&self) -> Option<Position>;
 }
 

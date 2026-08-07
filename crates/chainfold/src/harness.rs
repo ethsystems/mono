@@ -64,6 +64,11 @@ pub fn spawn<T: Tickable + Send + 'static>(mut driver: T) -> Handle<T> {
             if guard.stop {
                 break;
             }
+            // A catch-up tick asks for no delay, so the next poll runs at once.
+            if delay.is_zero() {
+                drop(guard);
+                continue;
+            }
             // Both signals are level-checked under the lock, so a late request wakes the loop.
             let _ = loop_state.1.wait_timeout_while(guard, delay, |state| {
                 !state.stop && state.checkpoint_requests == 0
@@ -110,6 +115,9 @@ impl<T> Handle<T> {
     }
 
     /// Returns when the durable cursor reaches `pos` or the driver is terminal.
+    ///
+    /// A later resync lowers the durable cursor, so the answer holds for the
+    /// instant it resolves.
     pub async fn wait_durable(&mut self, pos: Position) -> DriverStatus {
         self.status
             .wait_for(|s| {
